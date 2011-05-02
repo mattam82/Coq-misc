@@ -230,11 +230,20 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
 	       if not (eq_constr ty' ar) then iscl env' ty'
 	       else false
   in
-  let keep = not only_classes || iscl env cty in
-    if keep then let c = mkVar id in
-      map_succeed 
-	(fun f -> try f (c,cty) with UserError _ -> failwith "") 
-	[make_exact_entry sigma pri; make_apply_entry env sigma flags pri]
+  let is_class = iscl env cty in
+  let keep = not only_classes || is_class in
+    if keep then 
+      let c = mkVar id in
+      let hints =
+	if is_class then
+	  let hints = build_subclasses env sigma (mkVar id) in
+	    list_map_append
+	      (make_resolves env sigma (true,false,Flags.is_verbose()) None) hints
+	else []
+      in
+	hints @ map_succeed 
+	  (fun f -> try f (c,cty) with UserError _ -> failwith "") 
+	  [make_exact_entry sigma pri; make_apply_entry env sigma flags pri];
     else []
 
 let pf_filtered_hyps gls = 
@@ -603,8 +612,10 @@ let initial_select_evars onlyargs =
     (fun evd ev evi -> Typeclasses.is_class_evar evd evi)
 
 let resolve_typeclass_evars debug m env evd onlyargs split fail =
-  let evd = Evarconv.consider_remaining_unif_problems
-    ~ts:(Typeclasses.classes_transparent_state ()) env evd 
+  let evd = 
+    try Evarconv.consider_remaining_unif_problems
+      ~ts:(Typeclasses.classes_transparent_state ()) env evd
+    with _ -> evd
   in
     resolve_all_evars debug m env (initial_select_evars onlyargs) evd split fail
 
