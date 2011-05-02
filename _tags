@@ -11,6 +11,7 @@
 <ide/coqide_main.{native,byte}> : use_str, use_unix, thread, ide
 <checker/main.{native,byte}> : use_str, use_unix, use_dynlink, use_camlpX
 <plugins/micromega/csdpcert.{native,byte}> : use_nums, use_unix
+<tools/mkwinapp.{native,byte}> : use_unix
 
 ## tags for ide
 
@@ -25,7 +26,6 @@
 "toplevel/mltop.ml4": is_mltop
 
 "toplevel/whelp.ml4": use_grammar
-"parsing/g_vernac.ml4": use_grammar
 "tactics/extraargs.ml4": use_grammar
 "tactics/extratactics.ml4": use_grammar
 "tactics/class_tactics.ml4": use_grammar

@@ -168,7 +168,7 @@ let save_pref () =
   (try GtkData.AccelMap.save accel_file
   with _ -> ());
   let p = !current in
-  try
+
     let add = Minilib.Stringmap.add in
     let (++) x f = f x in
     Minilib.Stringmap.empty ++
@@ -219,12 +219,11 @@ let save_pref () =
     add "vertical_tabs" [string_of_bool p.vertical_tabs] ++
     add "opposite_tabs" [string_of_bool p.opposite_tabs] ++
     Config_lexer.print_file pref_file
-  with _ -> prerr_endline "Could not save preferences."
 
 let load_pref () =
   (try GtkData.AccelMap.load accel_file with _ -> ());
   let p = !current in
-  try
+
     let m = Config_lexer.load_file pref_file in
     let np = { p with cmd_coqc = p.cmd_coqc } in
     let set k f = try let v = Minilib.Stringmap.find k m in f v with _ -> () in
@@ -271,7 +270,7 @@ let load_pref () =
         v <> Coq_config.wwwcoq ^ "doc" &&
 	v <> Coq_config.wwwcoq ^ "doc/"
       then
-	prerr_endline ("Warning: Non-standard URL for Coq documentation in preference file: "^v);
+	(*prerr_endline ("Warning: Non-standard URL for Coq documentation in preference file: "^v);*)
       np.doc_url <- v);
     set_hd "library_url" (fun v -> np.library_url <- v);
     set_bool "show_toolbar" (fun v -> np.show_toolbar <- v);
@@ -286,13 +285,10 @@ let load_pref () =
     set_bool "lax_syntax" (fun v -> np.lax_syntax <- v);
     set_bool "vertical_tabs" (fun v -> np.vertical_tabs <- v);
     set_bool "opposite_tabs" (fun v -> np.opposite_tabs <- v);
-    current := np;
+    current := np
 (*
     Format.printf "in load_pref: current.text_font = %s@." (Pango.Font.to_string !current.text_font);
 *)
-  with e ->
-    prerr_endline ("Could not load preferences ("^
-		   (Printexc.to_string e)^").")
 
 let configure ?(apply=(fun () -> ())) () =
   let cmd_coqc =
@@ -509,8 +505,7 @@ let configure ?(apply=(fun () -> ())) () =
       "netscape -remote \"openURL(%s)\"";
       "mozilla -remote \"openURL(%s)\"";
       "firefox -remote \"openURL(%s,new-windows)\" || firefox %s &";
-      "seamonkey -remote \"openURL(%s)\" || seamonkey %s &";
-      "open -a Safari %s &"
+      "seamonkey -remote \"openURL(%s)\" || seamonkey %s &"
     ] in
     combo
       ~help:"(%s for url)"
@@ -523,6 +518,8 @@ let configure ?(apply=(fun () -> ())) () =
   in
   let doc_url =
     let predefined = [
+      "file://"^(List.fold_left Filename.concat (Coq_config.docdir) ["html";"refman";""]);
+      Coq_config.wwwrefman;
       use_default_doc_url
     ] in
     combo
@@ -534,6 +531,7 @@ let configure ?(apply=(fun () -> ())) () =
       !current.doc_url in
   let library_url =
     let predefined = [
+      "file://"^(List.fold_left Filename.concat (Coq_config.docdir) ["html";"stdlib";""]);
       Coq_config.wwwstdlib
     ] in
     combo

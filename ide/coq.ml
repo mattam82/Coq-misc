@@ -8,9 +8,6 @@
 
 open Ideutils
 
-let prerr_endline s = if !debug then prerr_endline s else ()
-
-
 (** * Version and date *)
 
 let get_version_date () =
@@ -54,7 +51,7 @@ let rec read_all_lines in_chan =
 
 let filter_coq_opts args =
   let argstr = String.concat " " (List.map Filename.quote args) in
-  let cmd = !Minilib.coqtop_path ^" -nois -filteropts " ^ argstr in
+  let cmd = Filename.quote !Minilib.coqtop_path ^" -nois -filteropts " ^ argstr in
   let oc,ic,ec = Unix.open_process_full cmd (Unix.environment ()) in
   let filtered_args = read_all_lines oc in
   let message = read_all_lines ec in
@@ -68,7 +65,7 @@ exception Coqtop_output of string list
 let check_connection args =
   try
     let argstr = String.concat " " (List.map Filename.quote args) in
-    let cmd = !Minilib.coqtop_path ^ " -batch " ^ argstr in
+    let cmd = Filename.quote !Minilib.coqtop_path ^ " -batch " ^ argstr in
     let ic = Unix.open_process_in cmd in
     let lines = read_all_lines ic in
     match Unix.close_process_in ic with
@@ -76,11 +73,11 @@ let check_connection args =
     | _ -> raise (Coqtop_output lines)
   with
     | End_of_file ->
-      Pervasives.prerr_endline "Cannot start connection with coqtop";
+      safe_prerr_endline "Cannot start connection with coqtop";
       exit 1
     | Coqtop_output lines ->
-      Pervasives.prerr_endline "Connection with coqtop failed:";
-      List.iter Pervasives.prerr_endline lines;
+      safe_prerr_endline "Connection with coqtop failed:";
+      List.iter safe_prerr_endline lines;
       exit 1
 
 (** It is tempting to merge the following function with the previous one,
@@ -90,7 +87,7 @@ let check_connection args =
 let check_coqlib args =
   try
     let argstr = String.concat " " (List.map Filename.quote args) in
-    let cmd = !Minilib.coqtop_path ^ " " ^ argstr ^ " -where" in
+    let cmd = Filename.quote !Minilib.coqtop_path ^ " " ^ argstr ^ " -where" in
     let ic = Unix.open_process_in cmd in
     let lines = read_all_lines ic in
     match Unix.close_process_in ic with
@@ -101,11 +98,11 @@ let check_coqlib args =
     | _ -> raise (Coqtop_output lines)
   with
     | End_of_file ->
-      Pervasives.prerr_endline "Cannot start connection with coqtop";
+      safe_prerr_endline "Cannot start connection with coqtop";
       exit 1
     | Coqtop_output lines ->
-      Pervasives.prerr_endline "Connection with coqtop failed:";
-      List.iter Pervasives.prerr_endline lines;
+      safe_prerr_endline "Connection with coqtop failed:";
+      List.iter safe_prerr_endline lines;
       exit 1
 
 
@@ -138,17 +135,24 @@ let coqtop_zombies () =
     doesn't call bin/sh, so args shouldn't be quoted. The process
     cannot be terminated by a Unix.close_process, but rather by a
     kill of the pid.
+
+           >--ide2top_w--[pipe]--ide2top_r-->
+    coqide                                   coqtop
+           <--top2ide_r--[pipe]--top2ide_w--<
+
+    Note: we use Unix.stderr in Unix.create_process to get debug
+    messages from the coqtop's Ide_slave loop.
 *)
 
 let open_process_pid prog args =
-  let (in_read,in_write) = Unix.pipe () in
-  let (out_read,out_write) = Unix.pipe () in
-  let pid = Unix.create_process prog args out_read in_write Unix.stderr in
+  let (ide2top_r,ide2top_w) = Unix.pipe () in
+  let (top2ide_r,top2ide_w) = Unix.pipe () in
+  let pid = Unix.create_process prog args ide2top_r top2ide_w Unix.stderr in
   assert (pid <> 0);
-  Unix.close out_read;
-  Unix.close in_write;
-  let ic = Unix.in_channel_of_descr in_read in
-  let oc = Unix.out_channel_of_descr out_write in
+  Unix.close ide2top_r;
+  Unix.close top2ide_w;
+  let oc = Unix.out_channel_of_descr ide2top_w in
+  let ic = Unix.in_channel_of_descr top2ide_r in
   set_binary_mode_out oc true;
   set_binary_mode_in ic true;
   (pid,ic,oc)
@@ -166,31 +170,25 @@ let spawn_coqtop sup_args =
     Mutex.unlock toplvl_ctr_mtx;
     raise e
 
+let respawn_coqtop coqtop = spawn_coqtop coqtop.sup_args
+
+let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
+let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
+
 let break_coqtop coqtop =
-  try Unix.kill coqtop.pid Sys.sigint
+  try !interrupter coqtop.pid
   with _ -> prerr_endline "Error while sending Ctrl-C"
 
-let blocking_kill pid =
+let kill_coqtop coqtop =
+  let pid = coqtop.pid in
   begin
-    try Unix.kill pid Sys.sigkill;
+    try !killer pid
     with _ -> prerr_endline "Kill -9 failed. Process already terminated ?"
   end;
   try
     ignore (Unix.waitpid [] pid);
     Mutex.lock toplvl_ctr_mtx; decr toplvl_ctr; Mutex.unlock toplvl_ctr_mtx
   with _ -> prerr_endline "Error while waiting for child"
-
-let kill_coqtop coqtop =
-  ignore (Thread.create blocking_kill coqtop.pid)
-
-let reset_coqtop coqtop =
-  kill_coqtop coqtop;
-  spawn_coqtop coqtop.sup_args
-
-let process_exn = function
-  | End_of_file -> None, "Coqtop died"
-  | e -> None, Printexc.to_string e
-
 
 (** * Calls to coqtop *)
 

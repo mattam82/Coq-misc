@@ -31,10 +31,17 @@ let pbar = GRange.progress_bar ~pulse_step:0.2 ()
 
 let debug = Flags.debug
 
+(* On a Win32 application with no console, writing to stderr raise
+   a Sys_error "bad file descriptor", hence the "try" below.
+   Ideally, we should re-route message to a log file somewhere, or
+   print in the response buffer.
+*)
+
+let safe_prerr_endline s =
+  try prerr_endline s;flush stderr with _ -> ()
+
 let prerr_endline s =
-  if !debug then (prerr_endline s;flush stderr)
-let prerr_string s =
-  if !debug then (prerr_string s;flush stderr)
+  if !debug then try prerr_endline s;flush stderr with _ -> ()
 
 let lib_ide_file f =
   Filename.concat (Filename.concat !Minilib.coqlib "ide") f
@@ -291,13 +298,8 @@ let browse f url =
 
 let doc_url () =
   if !current.doc_url = use_default_doc_url || !current.doc_url = "" then
-    if Sys.file_exists
-      (String.sub Coq_config.localwwwrefman 7
-	(String.length Coq_config.localwwwrefman - 7))
-    then
-      Coq_config.localwwwrefman
-    else
-      Coq_config.wwwrefman
+    let addr = List.fold_left Filename.concat (Coq_config.docdir) ["html";"refman";"index.html"] in
+    if Sys.file_exists addr then "file://"^addr else Coq_config.wwwrefman
   else !current.doc_url
 
 let url_for_keyword =
@@ -322,13 +324,11 @@ let url_for_keyword =
 	let u = String.sub s (i + 1) (String.length s - i - 1) in
 	Hashtbl.add ht k u
       with _ ->
-	Printf.eprintf "Warning: Cannot parse documentation index file.\n";
-	flush stderr
+	safe_prerr_endline "Warning: Cannot parse documentation index file."
     done with End_of_file ->
       close_in cin
   with _ ->
-    Printf.eprintf "Warning: Cannot find documentation index file.\n";
-    flush stderr
+    safe_prerr_endline "Warning: Cannot find documentation index file."
   end;
   Hashtbl.find ht : string -> string)
 

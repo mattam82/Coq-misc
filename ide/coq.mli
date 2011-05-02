@@ -34,11 +34,14 @@ val coqtop_zombies : unit -> int
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
 val spawn_coqtop : string list -> coqtop
+val respawn_coqtop : coqtop -> coqtop
 val kill_coqtop : coqtop -> unit
 val break_coqtop : coqtop -> unit
-val reset_coqtop : coqtop -> coqtop
 
-val process_exn : exn -> Ide_intf.location * string
+(** In win32, we'll use a different kill function than Unix.kill *)
+
+val killer : (int -> unit) ref
+val interrupter : (int -> unit) ref
 
 (** * Calls to Coqtop, cf [Ide_intf] for more details *)
 
