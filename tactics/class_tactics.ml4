@@ -243,17 +243,27 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
       in
 	hints @ map_succeed 
 	  (fun f -> try f (c,cty) with UserError _ -> failwith "") 
-	  [make_exact_entry sigma pri; make_apply_entry env sigma flags pri];
+	[make_exact_entry sigma pri; make_apply_entry env sigma flags pri]
     else []
 
 let pf_filtered_hyps gls = 
-  Goal.V82.filtered_context gls.Evd.sigma (sig_it gls)
+  Evarutil.nf_named_context_evar gls.Evd.sigma
+    (Goal.V82.filtered_context gls.Evd.sigma (sig_it gls))
 
-let make_autogoal_hints only_classes ?(st=full_transparent_state) g =
-  let sign = pf_filtered_hyps g in
-  let hintlist = list_map_append (pf_apply make_resolve_hyp g st (true,false,false) only_classes None) sign in
-    Hint_db.add_list hintlist (Hint_db.empty st true)
-  
+let make_hints g st only_classes sign =
+  let hintlist = list_map_append 
+    (pf_apply make_resolve_hyp g st (true,false,false) only_classes None) sign
+  in Hint_db.add_list hintlist (Hint_db.empty st true)
+    
+let make_autogoal_hints = 
+  let res = ref None in
+    fun only_classes ?(st=full_transparent_state) g ->
+    let sign = pf_filtered_hyps g in
+      match !res with
+      | Some (sign', hints) when sign == sign' -> hints
+      | _ -> let hints = make_hints g st only_classes sign in
+	  res := Some (sign, hints); hints
+	  
 let lift_tactic tac (f : goal list sigma -> autoinfo -> autogoal list sigma) : 'a tac =
   { skft = fun sk fk {it = gl,hints; sigma=s} ->
     let res = try Some (tac {it=gl; sigma=s}) with e when catchable e -> None in
