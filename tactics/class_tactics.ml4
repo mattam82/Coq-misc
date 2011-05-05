@@ -247,8 +247,7 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
     else []
 
 let pf_filtered_hyps gls = 
-  Evarutil.nf_named_context_evar gls.Evd.sigma
-    (Goal.V82.filtered_context gls.Evd.sigma (sig_it gls))
+  Goal.V82.hyps gls.Evd.sigma (sig_it gls)
 
 let make_hints g st only_classes sign =
   let hintlist = list_map_append 
@@ -260,8 +259,8 @@ let make_autogoal_hints =
     fun only_classes ?(st=full_transparent_state) g ->
     let sign = pf_filtered_hyps g in
       match !res with
-      | Some (sign', hints) when sign == sign' -> hints
-      | _ -> let hints = make_hints g st only_classes sign in
+      | Some (sign', hints) when sign = sign' -> hints
+      | _ -> let hints = make_hints g st only_classes (Environ.named_context_of_val sign) in
 	  res := Some (sign, hints); hints
 	  
 let lift_tactic tac (f : goal list sigma -> autoinfo -> autogoal list sigma) : 'a tac =
