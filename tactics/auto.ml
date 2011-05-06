@@ -54,10 +54,14 @@ type auto_tactic =
   | Unfold_nth of evaluable_global_reference       (* Hint Unfold *)
   | Extern     of glob_tactic_expr       (* Hint Extern *)
 
+type hints_path_atom = 
+  | PathHints of global_reference list
+  | PathAny
+
 type pri_auto_tactic = {
   pri  : int;            (* A number between 0 and 4, 4 = lower priority *)
   pat  : constr_pattern option; (* A pattern for the concl of the Goal *)
-  name  : global_reference option; (* A potential name to refer to the hint *) 
+  name  : hints_path_atom; (* A potential name to refer to the hint *) 
   code : auto_tactic     (* the tactic to apply when the concl matches pat *)
 }
 
@@ -73,18 +77,18 @@ let insert v l =
   insrec l
 
 (* Nov 98 -- Papageno *)
-(* Les Hints sont ré-organisés en plusieurs databases.
+(* Les Hints sont rÃ©-organisÃ©s en plusieurs databases.
 
-  La table impérative "searchtable", de type "hint_db_table",
-   associe une database (hint_db) à chaque nom.
+  La table impÃ©rative "searchtable", de type "hint_db_table",
+   associe une database (hint_db) Ã  chaque nom.
 
   Une hint_db est une table d'association fonctionelle constr -> search_entry
-  Le constr correspond à la constante de tête de la conclusion.
+  Le constr correspond Ã  la constante de tÃªte de la conclusion.
 
   Une search_entry est un triplet comprenant :
-     - la liste des tactiques qui n'ont pas de pattern associé
+     - la liste des tactiques qui n'ont pas de pattern associÃ©
      - la liste des tactiques qui ont un pattern
-     - un discrimination net borné (Btermdn.t) constitué de tous les
+     - un discrimination net bornÃ© (Btermdn.t) constituÃ© de tous les
        patterns de la seconde liste de tactiques *)
 
 type stored_data = pri_auto_tactic
@@ -135,10 +139,126 @@ let is_transparent_gr (ids, csts) = function
   | ConstRef cst -> Cpred.mem cst csts
   | IndRef _ | ConstructRef _ -> false
 
+type hints_path =
+  | PathAtom of hints_path_atom
+  | PathStar of hints_path
+  | PathSeq of hints_path * hints_path
+  | PathOr of hints_path * hints_path
+  | PathEmpty
+  | PathEpsilon
+
+let path_matches hp hints =
+  let rec aux hp hints k =
+    match hp, hints with
+    | PathAtom _, [] -> false
+    | PathAtom PathAny, (_ :: hints') -> k hints'
+    | PathAtom p, (h :: hints') -> 
+      if p = h then k hints' else false
+    | PathStar hp', hints -> 
+      k hints || aux hp' hints (fun hints' -> aux hp hints' k)
+    | PathSeq (hp, hp'), hints -> 
+      aux hp hints (fun hints' -> aux hp' hints' k)
+    | PathOr (hp, hp'), hints ->
+      aux hp hints k || aux hp' hints k
+    | PathEmpty, _ -> false
+    | PathEpsilon, hints -> k hints
+  in aux hp hints (fun hints' -> true)
+
+let rec matches_epsilon = function
+  | PathAtom _ -> false
+  | PathStar _ -> true
+  | PathSeq (p, p') -> matches_epsilon p && matches_epsilon p'
+  | PathOr (p, p') -> matches_epsilon p || matches_epsilon p'
+  | PathEmpty -> false
+  | PathEpsilon -> true
+
+let rec is_empty = function
+  | PathAtom _ -> false
+  | PathStar _ -> false
+  | PathSeq (p, p') -> is_empty p || is_empty p'
+  | PathOr (p, p') -> matches_epsilon p && matches_epsilon p'
+  | PathEmpty -> true
+  | PathEpsilon -> false
+
+let rec path_derivate hp hint =
+  let rec derivate_atoms hints hints' =
+    match hints, hints' with
+    | gr :: grs, gr' :: grs' when gr = gr' -> derivate_atoms grs grs'
+    | [], [] -> PathEpsilon
+    | [], hints -> PathAtom (PathHints hints)
+    | _, _ -> PathEmpty
+  in
+    match hp with
+    | PathAtom PathAny -> PathEpsilon
+    | PathAtom (PathHints grs) -> 
+      (match grs, hint with
+       | h :: hints, PathAny -> if hints = [] then PathEpsilon else PathAtom (PathHints hints)
+       | hints, PathHints hints' -> derivate_atoms hints hints'
+       | _, _ -> assert false)
+    | PathStar p -> if path_matches p [hint] then hp else PathEpsilon
+    | PathSeq (hp, hp') ->
+      let hpder = path_derivate hp hint in
+	if matches_epsilon hp then 
+	  PathOr (PathSeq (hpder, hp'), path_derivate hp' hint)
+	else if is_empty hpder then PathEmpty 
+	else PathSeq (hpder, hp')
+    | PathOr (hp, hp') ->
+      PathOr (path_derivate hp hint, path_derivate hp' hint)
+    | PathEmpty -> PathEmpty
+    | PathEpsilon -> PathEmpty
+
+let rec normalize_path h =
+  match h with
+  | PathStar PathEpsilon -> PathEpsilon
+  | PathSeq (PathEmpty, _) | PathSeq (_, PathEmpty) -> PathEmpty
+  | PathSeq (PathEpsilon, p) | PathSeq (p, PathEpsilon) -> normalize_path p
+  | PathOr (PathEmpty, p) | PathOr (p, PathEmpty) -> normalize_path p
+  | PathOr (p, q) -> 
+    let p', q' = normalize_path p, normalize_path q in
+      if p = p' && q = q' then h
+      else normalize_path (PathOr (p', q'))
+  | PathSeq (p, q) -> 
+    let p', q' = normalize_path p, normalize_path q in
+      if p = p' && q = q' then h
+      else normalize_path (PathSeq (p', q'))
+  | _ -> h
+
+let path_derivate hp hint = normalize_path (path_derivate hp hint)
+
+let rec pp_hints_path = function
+  | PathAtom (PathAny) -> str"."
+  | PathAtom (PathHints grs) -> prlist_with_sep pr_spc pr_global grs
+  | PathStar p -> str "(" ++ pp_hints_path p ++ str")*"
+  | PathSeq (p, p') -> pp_hints_path p ++ spc () ++ pp_hints_path p'
+  | PathOr (p, p') -> 
+    str "(" ++ pp_hints_path p ++ spc () ++ str"|" ++ spc () ++ pp_hints_path p' ++ str ")"
+  | PathEmpty -> str"Ã˜"
+  | PathEpsilon -> str"Îµ"
+
+let rec subst_hints_path subst hp =
+  match hp with
+  | PathAtom PathAny -> hp
+  | PathAtom (PathHints grs) -> 
+    let gr' gr = fst (subst_global subst gr) in
+    let grs' = list_smartmap gr' grs in
+      if grs' == grs then hp else PathAtom (PathHints grs')
+  | PathStar p -> let p' = subst_hints_path subst p in
+      if p' == p then hp else PathStar p'
+  | PathSeq (p, q) ->
+    let p' = subst_hints_path subst p in
+    let q' = subst_hints_path subst q in
+      if p' == p && q' == q then hp else PathSeq (p', q')
+  | PathOr (p, q) ->
+    let p' = subst_hints_path subst p in
+    let q' = subst_hints_path subst q in
+      if p' == p && q' == q then hp else PathOr (p', q')
+  | _ -> hp
+
 module Hint_db = struct
 
   type t = {
     hintdb_state : Names.transparent_state;
+    hintdb_cut : hints_path;
     hintdb_unfolds : Idset.t * Cset.t;
     use_dn : bool;
     hintdb_map : search_entry Constr_map.t;
@@ -148,6 +268,7 @@ module Hint_db = struct
   }
 
   let empty st use_dn = { hintdb_state = st;
+			  hintdb_cut = PathEmpty;
 			  hintdb_unfolds = (Idset.empty, Cset.empty);
 			  use_dn = use_dn;
 			  hintdb_map = Constr_map.empty;
@@ -226,7 +347,7 @@ module Hint_db = struct
       else rebuild_dn st (sl1', sl2', dn)
 
   let remove_list grs db =
-    let filter h = match h.name with None -> true | Some gr -> not (List.mem gr grs) in
+    let filter h = match h.name with PathHints [gr] -> not (List.mem gr grs) | _ -> true in
     let hintmap = Constr_map.map (remove_he db.hintdb_state filter) db.hintdb_map in
     let hintnopat = list_smartfilter (fun (ge, sd) -> filter sd) db.hintdb_nopat in
       { db with hintdb_map = hintmap; hintdb_nopat = hintnopat }
@@ -242,6 +363,11 @@ module Hint_db = struct
   let set_transparent_state db st =
     if db.use_dn then rebuild_db st db
     else { db with hintdb_state = st }
+
+  let add_cut path db =
+    { db with hintdb_cut = normalize_path (PathOr (db.hintdb_cut, path)) }
+
+  let cut db = db.hintdb_cut
 
   let unfolds db = db.hintdb_unfolds
 
@@ -305,7 +431,7 @@ let dummy_goal = Goal.V82.dummy_goal
 
 let name_of_constr c = try Some (global_of_constr c) with Not_found -> None
 
-let make_exact_entry sigma pri ?name (c,cty) =
+let make_exact_entry sigma pri ?(name=PathAny) (c,cty) =
   let cty = strip_outer_cast cty in
     match kind_of_term cty with
     | Prod _ -> failwith "make_exact_entry"
@@ -321,7 +447,7 @@ let make_exact_entry sigma pri ?name (c,cty) =
 	    name = name;
 	    code = Give_exact c })
 
-let make_apply_entry env sigma (eapply,hnf,verbose) pri ?name (c,cty) =
+let make_apply_entry env sigma (eapply,hnf,verbose) pri ?(name=PathAny) (c,cty) =
   let cty = if hnf then hnf_constr env sigma cty else cty in
     match kind_of_term cty with
     | Prod _ ->
@@ -372,7 +498,8 @@ let make_resolves env sigma flags pri ?name c =
 (* used to add an hypothesis to the local hint database *)
 let make_resolve_hyp env sigma (hname,_,htyp) =
   try
-    [make_apply_entry env sigma (true, true, false) None ~name:(VarRef hname)
+    [make_apply_entry env sigma (true, true, false) None 
+       ~name:(PathHints [VarRef hname])
        (mkVar hname, htyp)]
   with
     | Failure _ -> []
@@ -384,7 +511,7 @@ let make_unfold eref =
   (Some g,
    { pri = 4;
      pat = None;
-     name = Some g;
+     name = PathHints [g];
      code = Unfold_nth eref })
 
 let make_extern pri pat tacast =
@@ -392,10 +519,10 @@ let make_extern pri pat tacast =
   (hdconstr,
    { pri = pri;
      pat = pat;
-     name = None;
+     name = PathAny;
      code = Extern tacast })
 
-let make_trivial env sigma ?name c =
+let make_trivial env sigma ?(name=PathAny) c =
   let t = hnf_constr env sigma (type_of env sigma c) in
   let hd = head_of_constr_reference (fst (head_constr t)) in
   let ce = mk_clenv_from dummy_goal (c,t) in
@@ -433,22 +560,29 @@ let add_transparency dbname grs b =
       st grs
   in searchtable_add (dbname, Hint_db.set_transparent_state db st')
 
-let remove_hints dbname hintlist grs =
+let remove_hint dbname grs =
   let db = get_db dbname in
   let db' = Hint_db.remove_list grs db in
+    searchtable_add (dbname, db')
+
+let add_cut dbname path =
+  let db = get_db dbname in
+  let db' = Hint_db.add_cut path db in
     searchtable_add (dbname, db')
 
 type hint_action = | CreateDB of bool * transparent_state
 		   | AddTransparency of evaluable_global_reference list * bool
 		   | AddHints of (global_reference option * pri_auto_tactic) list
 		   | RemoveHints of global_reference list
+		   | AddCut of hints_path
 
 let cache_autohint (_,(local,name,hints)) =
   match hints with
   | CreateDB (b, st) -> searchtable_add (name, Hint_db.empty st b)
   | AddTransparency (grs, b) -> add_transparency name grs b
   | AddHints hints -> add_hint name hints
-  | RemoveHints grs -> remove_hints name hints grs
+  | RemoveHints grs -> remove_hint name grs
+  | AddCut path -> add_cut name path
 
 let forward_subst_tactic =
   ref (fun _ -> failwith "subst_tactic is not installed for auto")
@@ -528,7 +662,9 @@ let subst_autohint (subst,(local,name,hintlist as obj)) =
     | RemoveHints grs ->
 	let grs' = list_smartmap (fun x -> fst (subst_global subst x)) grs in
 	  if grs==grs' then obj else (local, name, RemoveHints grs')
-
+    | AddCut path ->
+      let path' = subst_hints_path subst path in
+	if path' == path then obj else (local, name, AddCut path')
 
 let classify_autohint ((local,name,hintlist) as obj) =
   if local or hintlist = (AddHints []) then Dispose else Substitute obj
@@ -560,15 +696,20 @@ let add_resolves env sigma clist local dbnames =
        Lib.add_anonymous_leaf
 	 (inAutoHint
 	    (local,dbname, AddHints
-     	      (List.flatten (List.map (fun (x, hnf, name, y) ->
-		make_resolves env sigma (true,hnf,Flags.is_verbose()) x ?name y) clist)))))
+     	      (List.flatten (List.map (fun (x, hnf, path, y) ->
+		make_resolves env sigma (true,hnf,Flags.is_verbose()) x ~name:path y) clist)))))
     dbnames
-
 
 let add_unfolds l local dbnames =
   List.iter
     (fun dbname -> Lib.add_anonymous_leaf
        (inAutoHint (local,dbname, AddHints (List.map make_unfold l))))
+    dbnames
+
+let add_cuts l local dbnames =
+  List.iter
+    (fun dbname -> Lib.add_anonymous_leaf
+       (inAutoHint (local,dbname, AddCut l)))
     dbnames
 
 let add_transparency l b local dbnames =
@@ -601,7 +742,8 @@ let add_trivials env sigma l local dbnames =
   List.iter
     (fun dbname ->
        Lib.add_anonymous_leaf (
-	 inAutoHint(local,dbname, AddHints (List.map (fun (name, c) -> make_trivial env sigma ?name c) l))))
+	 inAutoHint(local,dbname, 
+		    AddHints (List.map (fun (name, c) -> make_trivial env sigma ~name c) l))))
     dbnames
 
 let forward_intern_tac =
@@ -610,8 +752,9 @@ let forward_intern_tac =
 let set_extern_intern_tac f = forward_intern_tac := f
 
 type hints_entry =
-  | HintsResolveEntry of (int option * bool * global_reference option * constr) list
-  | HintsImmediateEntry of (global_reference option * constr) list
+  | HintsResolveEntry of (int option * bool * hints_path_atom * constr) list
+  | HintsImmediateEntry of (hints_path_atom * constr) list
+  | HintsCutEntry of hints_path
   | HintsUnfoldEntry of evaluable_global_reference list
   | HintsTransparencyEntry of evaluable_global_reference list * bool
   | HintsExternEntry of
@@ -652,10 +795,10 @@ let prepare_hint env (sigma,c) =
       mkNamedLambda id t (iter (replace_term evar (mkVar id) c)) in
   iter c
 
-let name_of_constr_expr c =
+let path_of_constr_expr c =
   match c with
-  | Topconstr.CRef r -> (try Some (global r) with _ -> None)
-  | _ -> None 
+  | Topconstr.CRef r -> (try PathHints [global r] with _ -> PathAny)
+  | _ -> PathAny
       
 let interp_hints h =
   let f c =
@@ -668,8 +811,8 @@ let interp_hints h =
     let r' = evaluable_of_global_reference (Global.env()) gr in
     Dumpglob.add_glob (loc_of_reference r) gr;
     r' in
-  let fres (o, b, c) = (o, b, name_of_constr_expr c, f c) in
-  let fi c = name_of_constr_expr c, f c in
+  let fres (o, b, c) = (o, b, path_of_constr_expr c, f c) in
+  let fi c = path_of_constr_expr c, f c in
   let fp = Constrintern.intern_constr_pattern Evd.empty (Global.env()) in
   match h with
   | HintsResolve lhints -> HintsResolveEntry (List.map fres lhints)
@@ -681,7 +824,7 @@ let interp_hints h =
       let constr_hints_of_ind qid =
         let ind = global_inductive_with_alias qid in
         list_tabulate (fun i -> let c = (ind,i+1) in
-			 None, true, Some (ConstructRef c), mkConstruct c)
+			 None, true, PathHints [ConstructRef c], mkConstruct c)
 	  (nconstructors ind) in
 	HintsResolveEntry (List.flatten (List.map constr_hints_of_ind lqid))
   | HintsExtern (pri, patcom, tacexp) ->
@@ -698,6 +841,7 @@ let add_hints local dbnames0 h =
   match h with
   | HintsResolveEntry lhints -> add_resolves env sigma lhints local dbnames
   | HintsImmediateEntry lhints -> add_trivials env sigma lhints local dbnames
+  | HintsCutEntry lhints -> add_cuts lhints local dbnames
   | HintsUnfoldEntry lhints -> add_unfolds lhints local dbnames
   | HintsTransparencyEntry (lhints, b) ->
       add_transparency lhints b local dbnames
@@ -796,6 +940,7 @@ let print_hint_db db =
 	    else str"Non-discriminated database")));
   msgnl (hov 2 (str"Unfoldable variable definitions: " ++ pr_idpred ids));
   msgnl (hov 2 (str"Unfoldable constant definitions: " ++ pr_cpred csts));
+  msgnl (hov 2 (str"Cut: " ++ pp_hints_path (Hint_db.cut db)));
   Hint_db.iter
     (fun head hintlist ->
       match head with
@@ -899,16 +1044,16 @@ let make_local_hint_db ?ts eapply lems gl =
     (Hint_db.add_list hintlist (Hint_db.empty ts false)) gl
 
 (* Serait-ce possible de compiler d'abord la tactique puis de faire la
-   substitution sans passer par bdize dont l'objectif est de préparer un
+   substitution sans passer par bdize dont l'objectif est de prÃ©parer un
    terme pour l'affichage ? (HH) *)
 
-(* Si on enlève le dernier argument (gl) conclPattern est calculé une
+(* Si on enlÃ¨ve le dernier argument (gl) conclPattern est calculÃ© une
 fois pour toutes : en particulier si Pattern.somatch produit une UserError
-Ce qui fait que si la conclusion ne matche pas le pattern, Auto échoue, même
-si après Intros la conclusion matche le pattern.
+Ce qui fait que si la conclusion ne matche pas le pattern, Auto Ã©choue, mÃªme
+si aprÃ¨s Intros la conclusion matche le pattern.
 *)
 
-(* conclPattern doit échouer avec error car il est rattraper par tclFIRST *)
+(* conclPattern doit Ã©chouer avec error car il est rattraper par tclFIRST *)
 
 let forward_interp_tactic =
   ref (fun _ -> failwith "interp_tactic is not installed for auto")
@@ -929,8 +1074,8 @@ let conclPattern concl pat tac gl =
 (**************************************************************************)
 
 (* local_db is a Hint database containing the hypotheses of current goal *)
-(* Papageno : cette fonction a été pas mal simplifiée depuis que la base
-  de Hint impérative a été remplacée par plusieurs bases fonctionnelles *)
+(* Papageno : cette fonction a Ã©tÃ© pas mal simplifiÃ©e depuis que la base
+  de Hint impÃ©rative a Ã©tÃ© remplacÃ©e par plusieurs bases fonctionnelles *)
 
 let flags_of_state st =
   {auto_unif_flags with

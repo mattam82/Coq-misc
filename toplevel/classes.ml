@@ -40,7 +40,7 @@ let _ =
       Flags.silently (fun () ->
 	Auto.add_hints local [typeclasses_db]
 	  (Auto.HintsResolveEntry
-	     [pri, false, Some inst, constr_of_global inst])) ());
+	     [pri, false, Auto.PathHints [inst], constr_of_global inst])) ());
   Typeclasses.register_set_typeclass_transparency set_typeclass_transparency;
   Typeclasses.register_classes_transparent_state 
     (fun () -> Auto.Hint_db.transparent_state (Auto.searchtable_map typeclasses_db))
@@ -283,27 +283,44 @@ let named_of_rel_context l =
 let string_of_global r =
  string_of_qualid (Nametab.shortest_qualid_of_global Idset.empty r)
 
-let rec build_subclasses env sigma c =
-  let ty = Retyping.get_type_of env sigma c in
-    match class_of_constr ty with
-    | None -> []
-    | Some (rels, (tc, args)) ->
+open Auto
+
+let build_subclasses env sigma c =
+  let glob = global_of_constr c in
+  let rec aux prevgrs c =
+    let ty = Retyping.get_type_of env sigma c in
+      match class_of_constr ty with
+      | None -> PathEpsilon, []
+      | Some (rels, (tc, args)) ->
 	let projs = list_map_filter 
 	  (fun (n, b, proj) ->
-	     if b then Option.map (fun p -> Nameops.out_name n, mkConst p) proj
-	     else None) tc.cl_projs 
+	   if b then Option.map (fun p -> ConstRef p, mkConst p) proj
+	   else None) tc.cl_projs 
 	in
 	let instapp = appvectc c (Termops.extended_rel_vect 0 rels) in
 	let projargs = Array.of_list (args @ [instapp]) in
-	let declare_proj (n, p) =
+	let declare_proj (paths, here, hints) (cref, p) =
 	  let body = it_mkLambda_or_LetIn (mkApp (p, projargs)) rels in
-	    body :: build_subclasses env sigma body
-	in list_map_append declare_proj projs
-	     
+	  let seg = PathAtom (PathHints [cref]) in
+	  let pathshere = PathOr (seg, here) in
+	  let grshere = cref :: prevgrs in
+	  let path', rest = aux grshere body in
+	    PathOr (paths, path'), pathshere, hints @ (PathHints grshere, body) :: rest
+	in 
+	let paths, pathshere, hints = 
+	  List.fold_left declare_proj (PathEmpty, PathEmpty, []) projs 
+	in
+	  PathOr (paths, PathSeq (pathshere, PathAtom (PathHints prevgrs))), hints
+  in aux [glob] c
+
 let declare_subclasses constr =
-  let hints = build_subclasses (Global.env ()) Evd.empty constr in
-  let entry = List.map (fun c -> (None, false, None, c)) hints in
-    Auto.add_hints true (* local *) [typeclasses_db] (Auto.HintsResolveEntry entry)
+  let path, hints = build_subclasses (Global.env ()) Evd.empty constr in
+  let entries = List.map (fun (path, c) -> (None, false, path, c)) hints in
+  let centry = (None, false, PathHints [global_of_constr constr], constr) in
+    Auto.add_hints true (* local *) [typeclasses_db] 
+      (Auto.HintsResolveEntry (centry :: entries));
+    Auto.add_hints true (* local *) [typeclasses_db] 
+      (Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path)))
 
 let context l =
   let env = Global.env() in

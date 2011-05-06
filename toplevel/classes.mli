@@ -73,4 +73,5 @@ val context : local_binder list -> unit
 
 val refine_ref : (open_constr -> Proof_type.tactic) ref
 
-val build_subclasses : env -> evar_map -> constr -> constr list
+val build_subclasses : env -> evar_map -> constr -> 
+  Auto.hints_path * (Auto.hints_path_atom * constr) list
