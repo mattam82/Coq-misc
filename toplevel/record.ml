@@ -331,13 +331,15 @@ let declare_class finite def infer id idbuild paramimpls params arity fieldimpls
 	Impargs.declare_manual_implicits false (ConstRef proj_cst) [List.hd fieldimpls];
 	Classes.set_typeclass_transparency (EvalConstRef cst) false false;
 	if infer then Evd.fold (fun ev evi _ -> Recordops.declare_method (ConstRef cst) ev sign) sign ();
-	cref, [Name proj_name, List.hd coers, Some proj_cst]
+	let sub = if List.hd coers then Some (List.hd priorities) else None in
+	  cref, [Name proj_name, sub, Some proj_cst]
     | _ ->
 	let idarg = Namegen.next_ident_away (snd id) (Termops.ids_of_context (Global.env())) in
 	let ind = declare_structure BiFinite infer (snd id) idbuild paramimpls
-	  params (Option.cata (fun x -> x) (Termops.new_Type ()) arity) fieldimpls fields
+	  params (Option.default (Termops.new_Type ()) arity) fieldimpls fields
 	  ~kind:Method ~name:idarg false (List.map (fun _ -> false) fields) sign
 	in
+	let coers = List.map2 (fun coe pri -> if coe then Some pri else None) coers priorities in
 	  IndRef ind, (list_map3 (fun (id, _, _) b y -> (id, b, y))
 			 (List.rev fields) coers (Recordops.lookup_projections ind))
   in
@@ -354,9 +356,9 @@ let declare_class finite def infer id idbuild paramimpls params arity fieldimpls
       cl_props = fields;
       cl_projs = projs }
   in
-    list_iter3 (fun p sub pri ->
-      if sub then match p with (_, _, Some p) -> declare_instance_cst true p pri | _ -> ())
-      k.cl_projs coers priorities;
+(*     list_iter3 (fun p sub pri -> *)
+(*       if sub then match p with (_, _, Some p) -> declare_instance_cst true p pri | _ -> ()) *)
+(*       k.cl_projs coers priorities; *)
   add_class k; impl
 
 let interp_and_check_sort sort =

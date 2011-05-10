@@ -358,7 +358,8 @@ Instance reflexive_eq_dom_reflexive (A : Type) `(Reflexive B R') :
 Proof. simpl_relation. Qed.
 
 (** [respectful] is a morphism for relation equivalence. *)
-
+Set Printing All. Set Typeclasses Debug.
+Print Hint subrelation.
 Instance respectful_morphism :
   Proper (relation_equivalence ++> relation_equivalence ++> relation_equivalence) (@respectful A B).
 Proof.

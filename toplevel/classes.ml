@@ -52,7 +52,7 @@ let declare_class g =
   | _ -> user_err_loc (loc_of_reference g, "declare_class", 
 		      Pp.str"Unsupported class type, only constants and inductives are allowed")
     
-let declare_instance glob g =
+let existing_instance glob g =
   let c = global g in
   let instance = Typing.type_of (Global.env ()) Evd.empty (constr_of_global c) in
   let _, r = decompose_prod_assum instance in
@@ -99,10 +99,9 @@ open Pp
 let ($$) g f = fun x -> g (f x)
 
 let instance_hook k pri global imps ?hook cst =
-  let inst = Typeclasses.new_instance k pri global cst in
-    Impargs.maybe_declare_manual_implicits false cst ~enriching:false imps;
-    Typeclasses.add_instance inst;
-    (match hook with Some h -> h cst | None -> ())
+  Impargs.maybe_declare_manual_implicits false cst ~enriching:false imps;
+  Typeclasses.declare_instance pri (not global) cst;
+  (match hook with Some h -> h cst | None -> ())
 
 let declare_instance_constant k pri global imps ?hook id term termtype =
   let cdecl =
@@ -285,26 +284,37 @@ let string_of_global r =
 
 open Auto
 
-let build_subclasses env sigma glob =
+let check_instance env sigma c =
+  try 
+    let (evd, c) = Typeclasses.resolve_one_typeclass env sigma
+      (Retyping.get_type_of env sigma c) in
+      Evd.is_empty evd
+  with _ -> false
+
+let build_subclasses ~check env sigma glob =
   let rec aux prevgrs c =
     let ty = Retyping.get_type_of env sigma c in
       match class_of_constr ty with
       | None -> PathEpsilon, []
       | Some (rels, (tc, args)) ->
-	let projs = list_map_filter 
-	  (fun (n, b, proj) ->
-	   if b then Option.map (fun p -> ConstRef p, mkConst p) proj
-	   else None) tc.cl_projs 
-	in
 	let instapp = appvectc c (Termops.extended_rel_vect 0 rels) in
 	let projargs = Array.of_list (args @ [instapp]) in
-	let declare_proj (paths, here, hints) (cref, p) =
-	  let body = it_mkLambda_or_LetIn (mkApp (p, projargs)) rels in
+	let projs = list_map_filter 
+	  (fun (n, b, proj) ->
+	   match b with 
+	   | None -> None
+	   | Some pri ->
+	     let p = Option.get proj in
+	     let body = it_mkLambda_or_LetIn (mkApp (mkConst p, projargs)) rels in
+	       if check && check_instance env sigma body then None
+	       else Some (ConstRef p, pri, body)) tc.cl_projs 
+	in
+	let declare_proj (paths, here, hints) (cref, pri, body) =
 	  let seg = PathAtom (PathHints [cref]) in
 	  let pathshere = PathOr (seg, here) in
 	  let grshere = cref :: prevgrs in
 	  let path', rest = aux grshere body in
-	    PathOr (paths, path'), pathshere, hints @ (PathHints grshere, body) :: rest
+	    PathOr (paths, path'), pathshere, hints @ (PathHints grshere, pri, body) :: rest
 	in 
 	let paths, pathshere, hints = 
 	  List.fold_left declare_proj (PathEmpty, PathEmpty, []) projs 
@@ -312,20 +322,20 @@ let build_subclasses env sigma glob =
 	  PathOr (paths, PathSeq (pathshere, PathAtom (PathHints prevgrs))), hints
   in aux [glob] (constr_of_global glob)
 
-let declare_variable glob =
+let declare_instance pri local glob =
   let c = constr_of_global glob in
   let ty = Retyping.get_type_of (Global.env ()) Evd.empty c in
     match class_of_constr ty with
     | Some (rels, (tc, args) as _cl) ->
-      Typeclasses.add_instance (Typeclasses.new_instance tc None false glob);
-      let path, hints = build_subclasses (Global.env ()) Evd.empty glob in
-      let entries = List.map (fun (path, c) -> (None, false, path, c)) hints in
+      Typeclasses.add_instance (Typeclasses.new_instance tc pri local glob);
+      let path, hints = build_subclasses (not local) (Global.env ()) Evd.empty glob in
+      let entries = List.map (fun (path, pri, c) -> (pri, local, path, c)) hints in
 	Auto.add_hints true (* local *) [typeclasses_db] (Auto.HintsResolveEntry entries);
 	Auto.add_hints true (* local *) [typeclasses_db] 
 	  (Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path)))
     | None -> ()
 
-let _ = Typeclasses.register_declare_variable declare_variable
+let _ = Typeclasses.register_declare_instance declare_instance
       
 let context l =
   let env = Global.env() in

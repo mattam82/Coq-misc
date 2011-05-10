@@ -34,8 +34,9 @@ type typeclass = {
 
   (** The methods implementations of the typeclass as projections. 
       Some may be undefinable due to sorting restrictions or simply undefined if 
-      no name is provided. The boolean indicates subclasses. *)
-  cl_projs : (name * bool * constant option) list;
+      no name is provided. The [int option option] indicates subclasses whose hint has
+      the given priority. *)
+  cl_projs : (name * int option option * constant option) list;
 }
 
 type instance
@@ -102,5 +103,5 @@ val solve_instanciations_problem : (env -> evar_map -> bool -> bool -> bool -> e
 val solve_instanciation_problem : (env -> evar_map -> types -> open_constr) ref
 
 
-val register_declare_variable : (global_reference -> unit) -> unit
-val declare_variable : global_reference -> unit
+val register_declare_instance : (int option (* priority *) -> bool (* global ? *) -> global_reference -> unit) -> unit
+val declare_instance : int option -> bool -> global_reference -> unit

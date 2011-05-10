@@ -55,7 +55,7 @@ type typeclass = {
   cl_props : rel_context;
 
   (* The method implementaions as projections. *)
-  cl_projs : (name * bool * constant option) list;
+  cl_projs : (name * int option option * constant option) list;
 }
 module Gmap = Fmap.Make(RefOrdered)
 
@@ -423,6 +423,6 @@ let resolve_typeclasses ?(onlyargs=false) ?(split=true) ?(fail=true) env evd =
 let resolve_one_typeclass env evm t =
   !solve_instanciation_problem env evm t
 
-let declare_variable_ref = ref (fun _ -> assert false)
-let register_declare_variable f = declare_variable_ref := f
-let declare_variable g = !declare_variable_ref g
+let declare_instance_ref = ref (fun _ _ _ -> assert false)
+let register_declare_instance f = declare_instance_ref := f
+let declare_instance g = !declare_instance_ref g

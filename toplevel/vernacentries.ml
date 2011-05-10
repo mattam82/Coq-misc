@@ -636,7 +636,7 @@ let vernac_context l =
   Classes.context l
 
 let vernac_declare_instances glob ids =
-  List.iter (fun (id) -> Classes.declare_instance glob id) ids
+  List.iter (fun (id) -> Classes.existing_instance glob id) ids
 
 let vernac_declare_class id =
   Classes.declare_class id

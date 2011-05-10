@@ -363,6 +363,8 @@ Instance relation_equivalence_equivalence (A : Type) :
   Equivalence (@relation_equivalence A).
 Proof. exact (@predicate_equivalence_equivalence (A::A::nil)). Qed.
 
+Print Hint Reflexive.
+
 Instance relation_implication_preorder A : PreOrder (@subrelation A).
 Proof. exact (@predicate_implication_preorder (A::A::nil)). Qed.
 
