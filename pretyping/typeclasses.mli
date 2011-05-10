@@ -100,3 +100,7 @@ val remove_instance_hint : global_reference -> unit
 
 val solve_instanciations_problem : (env -> evar_map -> bool -> bool -> bool -> evar_map) ref
 val solve_instanciation_problem : (env -> evar_map -> types -> open_constr) ref
+
+
+val register_declare_variable : (global_reference -> unit) -> unit
+val declare_variable : global_reference -> unit

@@ -43,8 +43,6 @@ type pri_auto_tactic = {
   code  : auto_tactic;    (** the tactic to apply when the concl matches pat *)
 }
 
-type stored_data = pri_auto_tactic
-
 type search_entry
 
 (** The head may not be bound. *)
@@ -76,7 +74,7 @@ module Hint_db :
     val add_list : (hint_entry) list -> t -> t
     val remove_one : global_reference -> t -> t
     val remove_list : global_reference list -> t -> t
-    val iter : (global_reference option -> stored_data list -> unit) -> t -> unit
+    val iter : (global_reference option -> pri_auto_tactic list -> unit) -> t -> unit
 
     val use_dn : t -> bool
     val transparent_state : t -> transparent_state

@@ -422,3 +422,7 @@ let resolve_typeclasses ?(onlyargs=false) ?(split=true) ?(fail=true) env evd =
 
 let resolve_one_typeclass env evm t =
   !solve_instanciation_problem env evm t
+
+let declare_variable_ref = ref (fun _ -> assert false)
+let register_declare_variable f = declare_variable_ref := f
+let declare_variable g = !declare_variable_ref g

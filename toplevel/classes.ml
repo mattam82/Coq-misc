@@ -285,8 +285,7 @@ let string_of_global r =
 
 open Auto
 
-let build_subclasses env sigma c =
-  let glob = global_of_constr c in
+let build_subclasses env sigma glob =
   let rec aux prevgrs c =
     let ty = Retyping.get_type_of env sigma c in
       match class_of_constr ty with
@@ -311,17 +310,23 @@ let build_subclasses env sigma c =
 	  List.fold_left declare_proj (PathEmpty, PathEmpty, []) projs 
 	in
 	  PathOr (paths, PathSeq (pathshere, PathAtom (PathHints prevgrs))), hints
-  in aux [glob] c
+  in aux [glob] (constr_of_global glob)
 
-let declare_subclasses constr =
-  let path, hints = build_subclasses (Global.env ()) Evd.empty constr in
-  let entries = List.map (fun (path, c) -> (None, false, path, c)) hints in
-  let centry = (None, false, PathHints [global_of_constr constr], constr) in
-    Auto.add_hints true (* local *) [typeclasses_db] 
-      (Auto.HintsResolveEntry (centry :: entries));
-    Auto.add_hints true (* local *) [typeclasses_db] 
-      (Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path)))
+let declare_variable glob =
+  let c = constr_of_global glob in
+  let ty = Retyping.get_type_of (Global.env ()) Evd.empty c in
+    match class_of_constr ty with
+    | Some (rels, (tc, args) as _cl) ->
+      Typeclasses.add_instance (Typeclasses.new_instance tc None false glob);
+      let path, hints = build_subclasses (Global.env ()) Evd.empty glob in
+      let entries = List.map (fun (path, c) -> (None, false, path, c)) hints in
+	Auto.add_hints true (* local *) [typeclasses_db] (Auto.HintsResolveEntry entries);
+	Auto.add_hints true (* local *) [typeclasses_db] 
+	  (Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path)))
+    | None -> ()
 
+let _ = Typeclasses.register_declare_variable declare_variable
+      
 let context l =
   let env = Global.env() in
   let evars = ref Evd.empty in
@@ -348,7 +353,6 @@ let context l =
 	   match x with ExplByPos (_, Some id') -> id = id' | _ -> false) impls
       in
 	Command.declare_assumption false (Local (* global *), Definitional) t
-	  [] impl (* implicit *) None (* inline *) (dummy_loc, id);
-	declare_subclasses (mkVar id))
+	  [] impl (* implicit *) None (* inline *) (dummy_loc, id))
   in List.iter fn (List.rev ctx)
        

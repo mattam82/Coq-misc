@@ -147,8 +147,10 @@ let declare_assumption is_coe (local,kind) c imps impl nl (_,ident) =
           msg_warning (pr_id ident ++ str" is declared as a parameter" ++
           str" because it is at a global level");
 	Autoinstance.search_declaration (ConstRef kn);
-        gr in
-  if is_coe then Class.try_add_new_coercion r local
+        gr 
+  in
+    if is_coe then Class.try_add_new_coercion r local;
+    Typeclasses.declare_variable r
 
 let declare_assumptions_hook = ref ignore
 let set_declare_assumptions_hook = (:=) declare_assumptions_hook

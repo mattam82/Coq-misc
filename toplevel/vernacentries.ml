@@ -396,7 +396,7 @@ let vernac_record k finite infer struc binders sort nameopt cfs =
 	Dumpglob.dump_definition lid false "constr"; id in
     if Dumpglob.dump () then (
       Dumpglob.dump_definition (snd struc) false "rec";
-      List.iter (fun ((_, x), _) ->
+      List.iter (fun (((_, x), _), _) ->
 	match x with
 	| Vernacexpr.AssumExpr ((loc, Name id), _) -> Dumpglob.dump_definition (loc,id) false "proj"
 	| _ -> ()) cfs);
@@ -419,7 +419,7 @@ let vernac_inductive finite infer indl =
   | [ ( id , bl , c , Class true, Constructors [l]), _ ] ->
       let f =
 	let (coe, ((loc, id), ce)) = l in
-	  ((coe, AssumExpr ((loc, Name id), ce)), [])
+	  (((coe, AssumExpr ((loc, Name id), ce)), None), [])
       in vernac_record (Class true) finite infer id bl c None [f]
   | [ ( id , bl , c , Class true, _), _ ] ->
       Util.error "Definitional classes must have a single method"

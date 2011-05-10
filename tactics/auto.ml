@@ -69,10 +69,15 @@ type hint_entry = global_reference option * pri_auto_tactic
 
 let pri_order {pri=pri1} {pri=pri2} = pri1 <= pri2
 
+let pri_diff (id1, {pri=pri1}) (id2, {pri=pri2}) = 
+  let diff = pri1 - pri2 in
+    if diff = 0 then id2 - id1
+    else diff
+
 let insert v l =
   let rec insrec = function
     | [] -> [v]
-    | h::tl -> if pri_order v h then v::h::tl else h::(insrec tl)
+    | h::tl -> if pri_diff v h <= 0 then v::h::tl else h::(insrec tl)
   in
   insrec l
 
@@ -91,18 +96,18 @@ let insert v l =
      - un discrimination net borné (Btermdn.t) constitué de tous les
        patterns de la seconde liste de tactiques *)
 
-type stored_data = pri_auto_tactic
+type stored_data = int * pri_auto_tactic
 
 module Bounded_net = Btermdn.Make(struct
 				    type t = stored_data
-				    let compare = Pervasives.compare
+				    let compare = pri_diff
 				  end)
 
 type search_entry = stored_data list * stored_data list * Bounded_net.t
 
 let empty_se = ([],[],Bounded_net.create ())
 
-let eq_pri_auto_tactic x y =
+let eq_pri_auto_tactic (_,x) (_,y) =
   if x.pri = y.pri && x.pat = y.pat then
     match x.code,y.code with
       | Res_pf(cstr,_),Res_pf(cstr1,_) -> 
@@ -121,16 +126,18 @@ let eq_pri_auto_tactic x y =
 let add_tac pat t st (l,l',dn) =
   match pat with
   | None -> if not (List.exists (eq_pri_auto_tactic t) l) then (insert t l, l', dn) else (l, l', dn)
-  | Some pat -> if not (List.exists (eq_pri_auto_tactic t) l') then (l, insert t l', Bounded_net.add st dn (pat,t)) else (l, l', dn)
+  | Some pat -> 
+    if not (List.exists (eq_pri_auto_tactic t) l') 
+    then (l, insert t l', Bounded_net.add st dn (pat,t)) else (l, l', dn)
 
 let rebuild_dn st (l,l',dn) =
-  (l, l', List.fold_left (fun dn t -> Bounded_net.add (Some st) dn (Option.get t.pat, t))
+  (l, l', List.fold_left (fun dn (id,t) -> Bounded_net.add (Some st) dn (Option.get t.pat, (id,t)))
     (Bounded_net.create ()) l')
 
 let lookup_tacs (hdc,c) st (l,l',dn) =
   let l'  = List.map snd (Bounded_net.lookup st dn c) in
-  let sl' = Sort.list pri_order l' in
-    Sort.merge pri_order l sl'
+  let sl' = List.stable_sort pri_diff l' in
+    List.merge pri_diff l sl'
 
 module Constr_map = Map.Make(RefOrdered)
 
@@ -185,14 +192,15 @@ let rec path_derivate hp hint =
     match hints, hints' with
     | gr :: grs, gr' :: grs' when gr = gr' -> derivate_atoms grs grs'
     | [], [] -> PathEpsilon
-    | [], hints -> PathAtom (PathHints hints)
-    | _, _ -> PathEmpty
+    | [], hints -> PathEmpty
+    | grs, [] -> PathAtom (PathHints grs)
+    | _, _ -> PathEmpty 
   in
     match hp with
     | PathAtom PathAny -> PathEpsilon
     | PathAtom (PathHints grs) -> 
       (match grs, hint with
-       | h :: hints, PathAny -> if hints = [] then PathEpsilon else PathAtom (PathHints hints)
+       | h :: hints, PathAny -> PathEmpty
        | hints, PathHints hints' -> derivate_atoms hints hints'
        | _, _ -> assert false)
     | PathStar p -> if path_matches p [hint] then hp else PathEpsilon
@@ -229,7 +237,7 @@ let rec pp_hints_path = function
   | PathAtom (PathAny) -> str"."
   | PathAtom (PathHints grs) -> prlist_with_sep pr_spc pr_global grs
   | PathStar p -> str "(" ++ pp_hints_path p ++ str")*"
-  | PathSeq (p, p') -> pp_hints_path p ++ spc () ++ pp_hints_path p'
+  | PathSeq (p, p') -> pp_hints_path p ++ str" ; " ++ pp_hints_path p'
   | PathOr (p, p') -> 
     str "(" ++ pp_hints_path p ++ spc () ++ str"|" ++ spc () ++ pp_hints_path p' ++ str ")"
   | PathEmpty -> str"Ø"
@@ -258,6 +266,7 @@ module Hint_db = struct
 
   type t = {
     hintdb_state : Names.transparent_state;
+    hintdb_maxid : int;
     hintdb_cut : hints_path;
     hintdb_unfolds : Idset.t * Cset.t;
     use_dn : bool;
@@ -268,6 +277,7 @@ module Hint_db = struct
   }
 
   let empty st use_dn = { hintdb_state = st;
+			  hintdb_maxid = 0;
 			  hintdb_cut = PathEmpty;
 			  hintdb_unfolds = (Idset.empty, Cset.empty);
 			  use_dn = use_dn;
@@ -279,16 +289,16 @@ module Hint_db = struct
     with Not_found -> empty_se
 
   let map_none db =
-    Sort.merge pri_order (List.map snd db.hintdb_nopat) []
+    List.map snd (List.sort pri_diff (List.map snd db.hintdb_nopat))
 
   let map_all k db =
     let (l,l',_) = find k db in
-      Sort.merge pri_order (List.map snd db.hintdb_nopat @ l) l'
+      List.map snd (List.merge pri_diff (List.map snd db.hintdb_nopat @ l) l')
 
   let map_auto (k,c) db =
     let st = if db.use_dn then Some db.hintdb_state else None in
     let l' = lookup_tacs (k,c) st (find k db) in
-      Sort.merge pri_order (List.map snd db.hintdb_nopat) l'
+      List.map snd (List.merge pri_diff (List.map snd db.hintdb_nopat) l')
 
   let is_exact = function
     | Give_exact _ -> true
@@ -298,7 +308,7 @@ module Hint_db = struct
     | Unfold_nth _ -> true
     | _ -> false
 
-  let addkv gr v db =
+  let addkv gr id v db =
     let k = match gr with
       | Some gr -> if db.use_dn && is_transparent_gr db.hintdb_state gr &&
 	  is_unfold v.code then None else Some gr
@@ -308,19 +318,21 @@ module Hint_db = struct
     let pat = if not db.use_dn && is_exact v.code then None else v.pat in
       match k with
       | None ->
-	  if not (List.exists (fun (_, v') -> v = v') db.hintdb_nopat) then
-	    { db with hintdb_nopat = (gr,v) :: db.hintdb_nopat }
+	  if not (List.exists (fun (_, (_,v')) -> v = v') db.hintdb_nopat) then
+	    { db with 
+	      hintdb_nopat = (gr, (id, v)) :: db.hintdb_nopat }
 	  else db
       | Some gr ->
 	  let oval = find gr db in
-	    { db with hintdb_map = Constr_map.add gr (add_tac pat v dnst oval) db.hintdb_map }
+	    { db with 
+	      hintdb_map = Constr_map.add gr (add_tac pat (id, v) dnst oval) db.hintdb_map }
 
   let rebuild_db st' db =
     let db' =
       { db with hintdb_map = Constr_map.map (rebuild_dn st') db.hintdb_map;
 	hintdb_state = st'; hintdb_nopat = [] }
     in
-      List.fold_left (fun db (gr,v) -> addkv gr v db) db' db.hintdb_nopat
+      List.fold_left (fun db (gr,(id,v)) -> addkv gr id v db) db' db.hintdb_nopat
 
   let add_one (k,v) db =
     let st',db,rebuild =
@@ -335,8 +347,9 @@ module Hint_db = struct
 	    state, { db with hintdb_unfolds = unfs }, true
       | _ -> db.hintdb_state, db, false
     in
-    let db = if db.use_dn && rebuild then rebuild_db st' db else db
-    in addkv k v db
+    let db = if db.use_dn && rebuild then rebuild_db st' db else db in
+    let db' = addkv k db.hintdb_maxid v db in
+      { db' with hintdb_maxid = db.hintdb_maxid + 1 }
 
   let add_list l db = List.fold_right add_one l db
 
@@ -347,7 +360,7 @@ module Hint_db = struct
       else rebuild_dn st (sl1', sl2', dn)
 
   let remove_list grs db =
-    let filter h = match h.name with PathHints [gr] -> not (List.mem gr grs) | _ -> true in
+    let filter (_, h) = match h.name with PathHints [gr] -> not (List.mem gr grs) | _ -> true in
     let hintmap = Constr_map.map (remove_he db.hintdb_state filter) db.hintdb_map in
     let hintnopat = list_smartfilter (fun (ge, sd) -> filter sd) db.hintdb_nopat in
       { db with hintdb_map = hintmap; hintdb_nopat = hintnopat }
@@ -355,8 +368,8 @@ module Hint_db = struct
   let remove_one gr db = remove_list [gr] db
 
   let iter f db =
-    f None (List.map snd db.hintdb_nopat);
-    Constr_map.iter (fun k (l,l',_) -> f (Some k) (l@l')) db.hintdb_map
+    f None (List.map (fun x -> snd (snd x)) db.hintdb_nopat);
+    Constr_map.iter (fun k (l,l',_) -> f (Some k) (List.map snd (l@l'))) db.hintdb_map
 
   let transparent_state db = db.hintdb_state
 

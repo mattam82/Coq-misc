@@ -239,7 +239,7 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
       let name = PathHints [VarRef id] in
       let path, hints =
 	if is_class then
-	  let path, hints = build_subclasses env sigma (mkVar id) in
+	  let path, hints = build_subclasses env sigma (VarRef id) in
 	    (path, 
 	     list_map_append
 	       (fun (p, c) -> make_resolves env sigma ~name:p (true,false,Flags.is_verbose()) None c) 
@@ -331,10 +331,10 @@ let hints_tac hints =
       let poss = e_possible_resolve hints info.hints concl in
       let rec aux i foundone = function
 	| (tac, _, b, name, pp) :: tl ->
-	    let derivs = path_derivate info.auto_cut name in
+	    let derivs = (* path_derivate *) info.auto_cut(*  name *) in
 	    let res = 
 	      try
-		if path_matches derivs [] then None else Some (tac tacgl)
+		(* if path_matches derivs [] then None else  *)Some (tac tacgl)
 	      with e when catchable e -> None 
 	    in
 	      (match res with
