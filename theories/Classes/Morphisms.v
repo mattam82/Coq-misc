@@ -358,8 +358,7 @@ Instance reflexive_eq_dom_reflexive (A : Type) `(Reflexive B R') :
 Proof. simpl_relation. Qed.
 
 (** [respectful] is a morphism for relation equivalence. *)
-Set Printing All. Set Typeclasses Debug.
-Print Hint subrelation.
+
 Instance respectful_morphism :
   Proper (relation_equivalence ++> relation_equivalence ++> relation_equivalence) (@respectful A B).
 Proof.
@@ -477,7 +476,7 @@ Qed.
 
 Lemma inverse_arrow `(NA : Normalizes A R (inverse R'''), NB : Normalizes B R' (inverse R'')) :
   Normalizes (A -> B) (R ==> R') (inverse (R''' ==> R'')%signature).
-Proof. unfold Normalizes in *. intros.
+Proof. unfold Normalizes in *. intros. 
   rewrite NA, NB. firstorder.
 Qed.
 

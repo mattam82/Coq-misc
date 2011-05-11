@@ -156,14 +156,14 @@ Instance eq_Transitive {A} : Transitive (@eq A) := @eq_trans A.
 (** A [PreOrder] is both Reflexive and Transitive. *)
 
 Class PreOrder {A} (R : relation A) : Prop := {
-  PreOrder_Reflexive :> Reflexive R ;
-  PreOrder_Transitive :> Transitive R }.
+  PreOrder_Reflexive :> Reflexive R | 1 ;
+  PreOrder_Transitive :> Transitive R | 1 }.
 
 (** A partial equivalence relation is Symmetric and Transitive. *)
 
 Class PER {A} (R : relation A) : Prop := {
-  PER_Symmetric :> Symmetric R ;
-  PER_Transitive :> Transitive R }.
+  PER_Symmetric :> Symmetric R | 2 ;
+  PER_Transitive :> Transitive R | 2 }.
 
 (** Equivalence relations. *)
 
@@ -362,8 +362,6 @@ Set Automatic Introduction.
 Instance relation_equivalence_equivalence (A : Type) :
   Equivalence (@relation_equivalence A).
 Proof. exact (@predicate_equivalence_equivalence (A::A::nil)). Qed.
-
-Print Hint Reflexive.
 
 Instance relation_implication_preorder A : PreOrder (@subrelation A).
 Proof. exact (@predicate_implication_preorder (A::A::nil)). Qed.

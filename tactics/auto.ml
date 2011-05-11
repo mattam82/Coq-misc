@@ -687,8 +687,7 @@ let inAutoHint =
                     cache_function = cache_autohint;
 		    load_function = (fun _ -> cache_autohint);
 		    subst_function = subst_autohint;
-		    classify_function = classify_autohint }
-
+		    classify_function = classify_autohint; }
 
 let create_hint_db l n st b =
   Lib.add_anonymous_leaf (inAutoHint (l,n,CreateDB (b, st)))

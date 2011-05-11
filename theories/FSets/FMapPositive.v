@@ -494,6 +494,8 @@ Module PositiveMap <: S with Module E:=PositiveOrderedTypeBits.
 
   Definition lt_key (p p':positive*A) := E.lt (fst p) (fst p').
 
+  Print Hint Symmetric.
+
   Global Program Instance eqk_equiv : Equivalence eq_key.
   Global Program Instance eqke_equiv : Equivalence eq_key_elt.
   Global Program Instance ltk_strorder : StrictOrder lt_key.
@@ -678,7 +680,7 @@ Module PositiveMap <: S with Module E:=PositiveOrderedTypeBits.
   simpl; auto.
   destruct o; simpl; intros.
   (* Some *)
-  apply (SortA_app (eqA:=eq_key_elt)); auto with *.
+  apply (SortA_app (eqA:=eq_key_elt)); auto with *. Print Hint Equivalence. About ME.eqke_equiv.
   constructor; auto.
   apply In_InfA; intros.
   destruct y0.

@@ -327,11 +327,11 @@ let declare_instance pri local glob =
   let ty = Retyping.get_type_of (Global.env ()) Evd.empty c in
     match class_of_constr ty with
     | Some (rels, (tc, args) as _cl) ->
-      Typeclasses.add_instance (Typeclasses.new_instance tc pri local glob);
+      Typeclasses.add_instance (Typeclasses.new_instance tc pri (not local) glob);
       let path, hints = build_subclasses (not local) (Global.env ()) Evd.empty glob in
       let entries = List.map (fun (path, pri, c) -> (pri, local, path, c)) hints in
-	Auto.add_hints true (* local *) [typeclasses_db] (Auto.HintsResolveEntry entries);
-	Auto.add_hints true (* local *) [typeclasses_db] 
+	Auto.add_hints local [typeclasses_db] (Auto.HintsResolveEntry entries);
+	Auto.add_hints local [typeclasses_db] 
 	  (Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path)))
     | None -> ()
 
