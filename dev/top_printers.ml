@@ -149,8 +149,6 @@ let ppinsts c = pp (pr_instance_gmap c)
 
 let ppobj obj = Format.print_string (Libobject.object_tag obj)
 
-let pphintspath p = pp (Auto.pp_hints_path p)
-
 let cnt = ref 0
 
 let cast_kind_display k =

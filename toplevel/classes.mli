@@ -72,10 +72,3 @@ val context : local_binder list -> unit
 (** Forward ref for refine *)
 
 val refine_ref : (open_constr -> Proof_type.tactic) ref
-
-(** Build the subinstances hints for a given typeclass object.
-    check tells if we should check for existence of the 
-    subinstances and add only the missing ones. *)
-
-val build_subclasses : check:bool -> env -> evar_map -> global_reference -> 
-  Auto.hints_path * (Auto.hints_path_atom * int option * constr) list

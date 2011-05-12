@@ -237,21 +237,19 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
     if keep then 
       let c = mkVar id in
       let name = PathHints [VarRef id] in
-      let path, hints =
+      let hints =
 	if is_class then
-	  let path, hints = build_subclasses ~check:false env sigma (VarRef id) in
-	    (path, 
-	     list_map_append
-	       (fun (p, pri, c) -> make_resolves env sigma 
-		  ~name:p (true,false,Flags.is_verbose()) pri c) 
-	       hints);
-	else PathEmpty, []
+	  let hints = build_subclasses ~check:false env sigma (VarRef id) in
+	    (list_map_append
+	       (fun (pri, c) -> make_resolves env sigma 
+		  (true,false,Flags.is_verbose()) pri c) 
+	       hints)
+	else []
       in
-	path, 
         (hints @ map_succeed 
 	 (fun f -> try f (c,cty) with UserError _ -> failwith "") 
 	 [make_exact_entry ~name sigma pri; make_apply_entry ~name env sigma flags pri])
-    else PathEmpty, []
+    else []
 
 let pf_filtered_hyps gls = 
   Goal.V82.hyps gls.Evd.sigma (sig_it gls)
@@ -263,7 +261,7 @@ let make_hints g st only_classes sign =
      if is_section_variable (pi1 hyp) then (paths, hints)
      else
        let path, hint = 		    
-	 pf_apply make_resolve_hyp g st (true,false,false) only_classes None hyp
+	 PathEmpty, pf_apply make_resolve_hyp g st (true,false,false) only_classes None hyp
        in
 	 (PathOr (paths, path), hint @ hints))
     (PathEmpty, []) sign
@@ -292,10 +290,9 @@ let intro_tac : atac =
 	List.map (fun g' ->
 	  let env = Goal.V82.env s g' in
 	  let context = Environ.named_context_of_val (Goal.V82.hyps s g') in
-	  let path, hint = make_resolve_hyp env s (Hint_db.transparent_state info.hints) 
+	  let hint = make_resolve_hyp env s (Hint_db.transparent_state info.hints) 
 	    (true,false,false) info.only_classes None (List.hd context) in
 	  let ldb = Hint_db.add_list hint info.hints in
-	  let ldb = Hint_db.add_cut path ldb in 
 	    (g', { info with is_evar = None; hints = ldb; auto_last_tac = lazy (str"intro");
 		   auto_cut = Hint_db.cut ldb })) gls
       in {it = gls'; sigma = s})
@@ -399,9 +396,9 @@ let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk
 	     second.skft
 	       (fun {it=gls';sigma=s'} fk' ->
 		  let needs_backtrack = 
-(* 		    if gls' = [] then *)
-(*  		      dependent info.only_classes s' info.is_evar (Goal.V82.concl s gl) *)
-(* 		    else  *)true
+		    if gls' = [] then
+ 		      dependent info.only_classes s' info.is_evar (Goal.V82.concl s gl)
+		    else true
 		  in
 		  let fk'' = if not needs_backtrack then
 		    (if !typeclasses_debug then msgnl (str"no backtrack on " ++ pr_ev s gl); fk) else fk' 

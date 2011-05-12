@@ -116,12 +116,15 @@ Ltac reify_goal lvar lexpr lterm:=
 
 Existing Instance gen_phiZ_morph.
 Existing Instance Zr.
+Lemma helpereq (R : Type) (Rr : Ring R) p : gen_phiPOS1 Rr p~1 = (1 + gen_phiPOS1 Rr p + gen_phiPOS1 Rr p).
+Proof. simpl. set_ring_notations. gen_ring_rewrite. Admitted.
+  
 
 Lemma comm: forall (R:Type)(Rr:Ring R)(c : Z) (x : R),
-  x * [c] == [c] * x.
+  x * [c] == ([c]:R) * x.
 induction c. intros. ring_simpl. gen_ring_rewrite. simpl. intros.
-ring_rewrite_rev same_gen.
-induction p. simpl.  gen_ring_rewrite. ring_rewrite IHp. rrefl.
+ring_rewrite_rev same_gen. 
+induction p. simpl. gen_ring_rewrite. ring_rewrite IHp. rrefl.
 simpl.  gen_ring_rewrite. ring_rewrite IHp. rrefl.
 simpl.  gen_ring_rewrite. 
 simpl. intros. ring_rewrite_rev same_gen.

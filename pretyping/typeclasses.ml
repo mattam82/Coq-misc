@@ -41,6 +41,11 @@ let classes_transparent_state_ref = ref (fun () -> assert false)
 let register_classes_transparent_state = (:=) classes_transparent_state_ref
 let classes_transparent_state () = !classes_transparent_state_ref ()
 
+let solve_instanciation_problem = ref (fun _ _ _ -> assert false)
+
+let resolve_one_typeclass env evm t =
+  !solve_instanciation_problem env evm t
+
 type rels = constr list
 
 (* This module defines type-classes *)
@@ -57,6 +62,7 @@ type typeclass = {
   (* The method implementaions as projections. *)
   cl_projs : (name * int option option * constant option) list;
 }
+
 module Gmap = Fmap.Make(RefOrdered)
 
 type typeclasses = typeclass Gmap.t
@@ -68,7 +74,7 @@ type instance = {
      -1 for discard, 0 for none, mutable to avoid redeclarations
      when multiple rebuild_object happen. *)
   is_global: int;
-  is_impl: global_reference; 
+  is_impl: global_reference;
 }
 
 type instances = (instance Gmap.t) Gmap.t
@@ -224,6 +230,38 @@ let class_input =
 let add_class cl =
   Lib.add_anonymous_leaf (class_input cl)
 
+(** Build the subinstances hints. *)
+
+let check_instance env sigma c =
+  try 
+    let (evd, c) = resolve_one_typeclass env sigma
+      (Retyping.get_type_of env sigma c) in
+      Evd.is_empty (Evd.undefined_evars evd)
+  with _ -> false
+
+let build_subclasses ~check env sigma glob =
+  let rec aux c =
+    let ty = Retyping.get_type_of env sigma c in
+      match class_of_constr ty with
+      | None -> []
+      | Some (rels, (tc, args)) ->
+	let instapp = appvectc c (Termops.extended_rel_vect 0 rels) in
+	let projargs = Array.of_list (args @ [instapp]) in
+	let projs = list_map_filter 
+	  (fun (n, b, proj) ->
+	   match b with 
+	   | None -> None
+	   | Some pri ->
+	     let p = Option.get proj in
+	     let body = it_mkLambda_or_LetIn (mkApp (mkConst p, projargs)) rels in
+	       if check && check_instance env sigma body then None
+	       else Some (ConstRef p, pri, body)) tc.cl_projs 
+	in
+	let declare_proj hints (cref, pri, body) =
+	  let rest = aux body in
+	    hints @ (pri, body) :: rest
+	in List.fold_left declare_proj [] projs 
+  in aux (constr_of_global glob)
 
 (*
  * instances persistent object
@@ -268,19 +306,18 @@ let discharge_instance (_, (action, inst)) =
 
 let is_local i = i.is_global = -1
 
+let add_instance inst =
+  add_instance_hint (constr_of_global inst.is_impl) (is_local inst) inst.is_pri;
+  List.iter (fun (pri, c) -> add_instance_hint c (is_local inst) pri) 
+    (build_subclasses ~check:true (Global.env ()) Evd.empty inst.is_impl)
+
 let rebuild_instance (action, inst) =
-  if action = AddInstance then
-    add_instance_hint inst.is_impl (is_local inst) inst.is_pri;
+  if action = AddInstance then add_instance inst;
   (action, inst)
 
 let classify_instance (action, inst) =
   if is_local inst then Dispose
   else Substitute (action, inst)
-
-let load_instance (_, (action, inst) as ai) =
-  cache_instance ai;
-  if action = AddInstance then
-    add_instance_hint inst.is_impl (is_local inst) inst.is_pri
 
 let instance_input =
   declare_object
@@ -295,11 +332,24 @@ let instance_input =
 
 let add_instance i =
   Lib.add_anonymous_leaf (instance_input (AddInstance, i));
-  add_instance_hint i.is_impl (is_local i) i.is_pri
+  add_instance i
 
 let remove_instance i =
   Lib.add_anonymous_leaf (instance_input (RemoveInstance, i));
   remove_instance_hint i.is_impl
+
+let declare_instance pri local glob =
+  let c = constr_of_global glob in
+  let ty = Retyping.get_type_of (Global.env ()) Evd.empty c in
+    match class_of_constr ty with
+    | Some (rels, (tc, args) as _cl) ->
+      add_instance (new_instance tc pri (not local) glob)
+(*       let path, hints = build_subclasses (not local) (Global.env ()) Evd.empty glob in *)
+(*       let entries = List.map (fun (path, pri, c) -> (pri, local, path, c)) hints in *)
+(* 	Auto.add_hints local [typeclasses_db] (Auto.HintsResolveEntry entries); *)
+(* 	Auto.add_hints local [typeclasses_db]  *)
+(* 	(Auto.HintsCutEntry (PathSeq (PathStar (PathAtom PathAny), path))) *)
+    | None -> ()
 
 open Declarations
 
@@ -379,6 +429,7 @@ let is_implicit_arg k =
     | InternalHole -> true
     | _ -> false
 
+
 (* To embed a boolean for resolvability status.
    This is essentially a hack to mark which evars correspond to
    goals and do not need to be resolved when we have nested [resolve_all_evars]
@@ -414,15 +465,7 @@ let has_typeclasses evd =
     evd false
 
 let solve_instanciations_problem = ref (fun _ _ _ _ _ -> assert false)
-let solve_instanciation_problem = ref (fun _ _ _ -> assert false)
 
 let resolve_typeclasses ?(onlyargs=false) ?(split=true) ?(fail=true) env evd =
   if not (has_typeclasses evd) then evd
   else !solve_instanciations_problem env evd onlyargs split fail
-
-let resolve_one_typeclass env evm t =
-  !solve_instanciation_problem env evm t
-
-let declare_instance_ref = ref (fun _ _ _ -> assert false)
-let register_declare_instance f = declare_instance_ref := f
-let declare_instance g = !declare_instance_ref g
