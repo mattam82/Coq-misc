@@ -239,7 +239,7 @@ let make_resolve_hyp env sigma st flags only_classes pri (id, _, cty) =
       let name = PathHints [VarRef id] in
       let hints =
 	if is_class then
-	  let hints = build_subclasses ~check:false env sigma (VarRef id) in
+	  let hints = build_subclasses ~check:false env sigma (VarRef id) None in
 	    (list_map_append
 	       (fun (pri, c) -> make_resolves env sigma 
 		  (true,false,Flags.is_verbose()) pri c) 
@@ -359,7 +359,7 @@ let hints_tac hints =
 		       | None -> gls', s'
 		       | Some (evgls, s') ->
 			 (* Reorder with dependent subgoals. *)
-			 (List.map (fun (ev, x) -> Some ev, x) evgls @ gls', s')
+			 (gls' @ List.map (fun (ev, x) -> Some ev, x) evgls, s')
 		   in
 		   let gls' = list_map_i
 		     (fun j (evar, g) ->
@@ -383,8 +383,13 @@ let hints_tac hints =
 	  fk ()
     in aux 1 false poss }
 
-let dependent only_classes evd oev concl =
-  if oev <> None then true
+let isProp env sigma concl = 
+  let ty = Retyping.get_type_of env sigma concl in
+    kind_of_term ty = Sort (Prop Null)
+
+let needs_backtrack only_classes env evd oev concl =
+  if oev <> None then 
+    not (isProp env evd concl) || not (Intset.is_empty (Evarutil.evars_of_term concl))
   else not (Intset.is_empty (Evarutil.evars_of_term concl))
 
 let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk =
@@ -397,7 +402,8 @@ let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk
 	       (fun {it=gls';sigma=s'} fk' ->
 		  let needs_backtrack = 
 		    if gls' = [] then
- 		      dependent info.only_classes s' info.is_evar (Goal.V82.concl s gl)
+ 		      needs_backtrack info.only_classes
+		        (Goal.V82.env s gl) s' info.is_evar (Goal.V82.concl s gl)
 		    else true
 		  in
 		  let fk'' = if not needs_backtrack then

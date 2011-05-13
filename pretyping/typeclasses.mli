@@ -109,5 +109,5 @@ val declare_instance : int option -> bool -> global_reference -> unit
     check tells if we should check for existence of the 
     subinstances and add only the missing ones. *)
 
-val build_subclasses : check:bool -> env -> evar_map -> global_reference -> 
+val build_subclasses : check:bool -> env -> evar_map -> global_reference -> int option (* priority *) ->
   (int option * constr) list

@@ -239,8 +239,8 @@ let check_instance env sigma c =
       Evd.is_empty (Evd.undefined_evars evd)
   with _ -> false
 
-let build_subclasses ~check env sigma glob =
-  let rec aux c =
+let build_subclasses ~check env sigma glob pri =
+  let rec aux pri c =
     let ty = Retyping.get_type_of env sigma c in
       match class_of_constr ty with
       | None -> []
@@ -251,17 +251,24 @@ let build_subclasses ~check env sigma glob =
 	  (fun (n, b, proj) ->
 	   match b with 
 	   | None -> None
-	   | Some pri ->
+	   | Some pri' ->
 	     let p = Option.get proj in
 	     let body = it_mkLambda_or_LetIn (mkApp (mkConst p, projargs)) rels in
 	       if check && check_instance env sigma body then None
-	       else Some (ConstRef p, pri, body)) tc.cl_projs 
+	       else 
+		 let pri = 
+		   match pri, pri' with
+		   | Some p, Some p' -> Some (p + p')
+		   | Some p, None -> Some (p + 1)
+		   | _, _ -> None
+		 in
+		   Some (ConstRef p, pri, body)) tc.cl_projs 
 	in
 	let declare_proj hints (cref, pri, body) =
-	  let rest = aux body in
+	  let rest = aux pri body in
 	    hints @ (pri, body) :: rest
 	in List.fold_left declare_proj [] projs 
-  in aux (constr_of_global glob)
+  in aux pri (constr_of_global glob)
 
 (*
  * instances persistent object
@@ -306,13 +313,14 @@ let discharge_instance (_, (action, inst)) =
 
 let is_local i = i.is_global = -1
 
-let add_instance inst =
+let add_instance check inst =
   add_instance_hint (constr_of_global inst.is_impl) (is_local inst) inst.is_pri;
   List.iter (fun (pri, c) -> add_instance_hint c (is_local inst) pri) 
-    (build_subclasses ~check:true (Global.env ()) Evd.empty inst.is_impl)
+    (build_subclasses ~check:(check && not (isVarRef inst.is_impl))
+       (Global.env ()) Evd.empty inst.is_impl inst.is_pri)
 
 let rebuild_instance (action, inst) =
-  if action = AddInstance then add_instance inst;
+  if action = AddInstance then add_instance true inst;
   (action, inst)
 
 let classify_instance (action, inst) =
@@ -332,7 +340,7 @@ let instance_input =
 
 let add_instance i =
   Lib.add_anonymous_leaf (instance_input (AddInstance, i));
-  add_instance i
+  add_instance true i
 
 let remove_instance i =
   Lib.add_anonymous_leaf (instance_input (RemoveInstance, i));
