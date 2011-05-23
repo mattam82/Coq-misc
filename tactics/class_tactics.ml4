@@ -125,6 +125,118 @@ let with_prods nprods (c, clenv) f gls =
   | None -> tclFAIL 0 (str"Not enough premisses") gls
   | Some clenv' -> f (c, clenv') gls
 
+(** Pattern-matching for instances *)
+
+(* let same_case_structure (_,cs1,ind,_) ci2 br1 br2 = *)
+(*   match ind with *)
+(*   | Some ind -> ind = ci2.ci_ind *)
+(*   | None -> cs1 = ci2.ci_cstr_ndecls *)
+
+(* let value_of_gr env (ids, csts) = function *)
+(*   | VarRef id -> if Idpred.mem id ids then pi2 (lookup_named id env) else None *)
+(*   | ConstRef cst -> if Cpred.mem cst csts then constant_opt_value env cst else None *)
+(*   | IndRef _ | ConstructRef _ -> None *)
+
+(* let matches_core ts convert allow_partial_app pat c = *)
+(*   let conv = match convert with *)
+(*     | None -> eq_constr *)
+(*     | Some (env,sigma) -> Reductionops.is_conv env sigma in *)
+(*   let rec sorec p (t:constr) = *)
+(*     let cT = strip_outer_cast t in *)
+(*     match p,kind_of_term cT with *)
+(*       | PMeta (Some n), m -> true *)
+
+(*       | PMeta None, m -> true *)
+
+(*       | PEvar _, m -> true *)
+
+(*       | PVar _, Evar _ -> true *)
+(*       | PRef (VarRef _), Evar _ -> true *)
+
+(*       | PRef (VarRef v1), Var v2 when v1 = v2 -> true *)
+
+(*       | PVar v1, Var v2 when v1 = v2 -> true *)
+
+(*       | PRef ref, _ when conv (constr_of_global ref) cT -> true *)
+
+(*       | PRel n1, Rel n2 when n1 = n2 -> true *)
+
+(*       | PSort (GProp c1), Sort (Prop c2) when c1 = c2 -> true *)
+
+(*       | PSort (GType _), Sort (Type _) -> true *)
+
+(*       | PApp (p, [||]), _ -> sorec p cT *)
+
+(*       | PApp (PApp (h, a1), a2), _ -> *)
+(*           sorec (PApp(h,Array.append a1 a2)) t *)
+
+(*       | PApp (PMeta (Some n),args1), App (c2,args2) when allow_partial_app -> *)
+(*           let p = Array.length args2 - Array.length args1 in *)
+(*           if p>=0 then *)
+(*             let args21, args22 = array_chop p args2 in *)
+(*             array_for_all2 sorec args1 args22 *)
+(*           else raise Matching.PatternMatchingFailure *)
+
+(*       | PApp (c1,arg1), App (c2,arg2) -> *)
+(*         (try sorec c1 c2 && array_for_all2 sorec arg1 arg2 *)
+(*          with Invalid_argument _ -> reduce c1 args1 cT) *)
+
+(*       | PApp (c1,args1), Evar _ -> true *)
+
+(*       | PProd (na1,c1,d1), Prod(na2,c2,d2) -> *)
+(* 	sorec c1 c2 && sorec d1 d2 *)
+
+(*       | PLambda (na1,c1,d1), Lambda(na2,c2,d2) -> *)
+(* 	sorec c1 c2 && sorec d1 d2 *)
+
+(*       | PLetIn (na1,c1,d1), LetIn(na2,c2,t2,d2) -> *)
+(* 	sorec c1 c2 && sorec d1 d2 *)
+
+(*       | PIf (a1,b1,b1'), Case (ci,_,a2,[|b2;b2'|]) -> *)
+(* 	  let ctx,b2 = decompose_lam_n_assum ci.ci_cstr_ndecls.(0) b2 in *)
+(* 	  let ctx',b2' = decompose_lam_n_assum ci.ci_cstr_ndecls.(1) b2' in *)
+(* 	  let n = rel_context_length ctx in *)
+(*           let n' = rel_context_length ctx' in *)
+(* 	  if noccur_between 1 n b2 & noccur_between 1 n' b2' then *)
+(* 	    let b1 = lift_pattern n b1 and b1' = lift_pattern n' b1' in *)
+(*   	      sorec a1 a2 && sorec b1 b2 && sorec b1' b2' *)
+(*           else *)
+(*             raise Matching.PatternMatchingFailure *)
+
+(*       | PCase (ci1,p1,a1,br1), Case (ci2,p2,a2,br2) -> *)
+(* 	  if same_case_structure ci1 ci2 br1 br2 then *)
+(*   	    sorec a1 a2 && sorec p1 p2 && array_for_all2 sorec br1 br2 *)
+(*           else *)
+(*             raise Matching.PatternMatchingFailure *)
+
+(*       |	PFix c1, Fix _ when eq_constr (mkFix c1) cT -> true *)
+(*       |	PCoFix c1, CoFix _ when eq_constr (mkCoFix c1) cT -> true *)
+
+	
+(*       | _ -> raise Matching.PatternMatchingFailure *)
+
+(*   and reduce f args c = *)
+(*     let value =  *)
+(*       match f with *)
+(*       | PVar v -> value_of_gr env (VarRef v) *)
+(*       | PRef r -> value_of_gr env r *)
+(*       | _ -> None *)
+(*     in *)
+
+(* 	 raise Matching.PatternMatchingFailure *)
+(*   in sorec pat c *)
+
+(* let pattern_matches ts env sigma c p =  *)
+(*   try matches_core ts None true c p *)
+(*   with Matching.PatternMatchingFailure -> false *)
+
+(* let with_pattern env sigma ts pat concl = *)
+(*   match pat with *)
+(*   | None -> fun tac -> tac *)
+(*   | Some pat -> *)
+(*     if pattern_matches ts env sigma pat concl then fun tac -> tac *)
+(*     else fun tac gl -> tclFAIL 0 (str"Does not match pattern") gl *)
+
 (** Hack to properly solve dependent evars that are typeclasses *)
 
 let flags_of_state st =
@@ -165,21 +277,23 @@ and e_my_find_search db_list local_db hdc concl =
     fun (flags, {pri = b; pat = p; code = t; name = name}) ->
       let tac =
 	match t with
-	  | Res_pf (term,cl) -> with_prods nprods (term,cl) (unify_resolve flags)
-	  | ERes_pf (term,cl) -> with_prods nprods (term,cl) (unify_e_resolve flags)
-	  | Give_exact (c) -> e_give_exact flags c
-	  | Res_pf_THEN_trivial_fail (term,cl) ->
-              tclTHEN (with_prods nprods (term,cl) (unify_e_resolve flags))
-		(e_trivial_fail_db db_list local_db)
-	  | Unfold_nth c -> tclWEAK_PROGRESS (unfold_in_concl [all_occurrences,c])
-	  | Extern tacast -> 
-(* 	    tclTHEN *)
-(* 	      (fun gl -> Refiner.tclEVARS (mark_unresolvables (project gl)) gl) *)
+	| Res_pf (term,cl) -> with_prods nprods (term,cl) (unify_resolve flags)
+	| ERes_pf (term,cl) -> with_prods nprods (term,cl) (unify_e_resolve flags)
+	| Give_exact (c) -> e_give_exact flags c
+	| Res_pf_THEN_trivial_fail (term,cl) ->
+          tclTHEN (with_prods nprods (term,cl) (unify_e_resolve flags))
+	  (e_trivial_fail_db db_list local_db)
+	| Unfold_nth c -> tclWEAK_PROGRESS (unfold_in_concl [all_occurrences,c])
+	| Extern tacast -> 
+	  (* 	    tclTHEN *)
+	  (* 	      (fun gl -> Refiner.tclEVARS (mark_unresolvables (project gl)) gl) *)
 	      (conclPattern concl p tacast)
       in
 	match t with
 	| Extern _ -> (tac,b,true, name, lazy (pr_autotactic t))
-	| _ -> (tac,b,false, name, lazy (pr_autotactic t))
+	| _ -> 
+(* 	  let tac gl = with_pattern (pf_env gl) (project gl) flags p concl tac gl in *)
+	    (tac,b,false, name, lazy (pr_autotactic t))
   in List.map tac_of_hint hintl
 
 and e_trivial_resolve db_list local_db gl =
@@ -332,7 +446,8 @@ let hints_tac hints =
 	    let derivs = (* path_derivate *) info.auto_cut(*  name *) in
 	    let res = 
 	      try
-		(* if path_matches derivs [] then None else  *)Some (tac tacgl)
+		(* if path_matches derivs [] then None else  *)
+		Some (tac tacgl)
 	      with e when catchable e -> None 
 	    in
 	      (match res with
@@ -342,7 +457,7 @@ let hints_tac hints =
 		     msgnl (pr_depth (i :: info.auto_depth) ++ str": " ++ Lazy.force pp
 			    ++ str" on" ++ spc () ++ pr_ev s gl);
 		   let fk =
-		     (fun () -> (* if !typeclasses_debug then msgnl (str"backtracked after " ++ pp); *)
+		     (fun () -> if !typeclasses_debug then msgnl (str"backtracked after " ++ Lazy.force pp);
 			aux (succ i) true tl)
 		   in
 		   let sgls =
