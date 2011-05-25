@@ -412,9 +412,10 @@ let intro_tac : atac =
       in {it = gls'; sigma = s})
 
 let normevars_tac : atac = 
-  { skft = fun sk fk {it = gl; sigma = s} ->
-    let gl', sigma' = Goal.V82.nf_evar s (fst gl) in
-      sk {it = [gl', snd gl]; sigma = sigma'} fk }
+  { skft = fun sk fk {it = (gl, info); sigma = s} ->
+    let gl', sigma' = Goal.V82.nf_evar s gl in
+    let info' = { info with auto_last_tac = lazy (str"normevars") } in
+      sk {it = [gl', info']; sigma = sigma'} fk }
 
   (* lift_tactic tclNORMEVAR *)
   (*   (fun {it = gls; sigma = s} info -> *)
@@ -503,9 +504,8 @@ let isProp env sigma concl =
     kind_of_term ty = Sort (Prop Null)
 
 let needs_backtrack only_classes env evd oev concl =
-  if oev <> None then 
-    not (isProp env evd concl) || not (Intset.is_empty (Evarutil.evars_of_term concl))
-  else not (Intset.is_empty (Evarutil.evars_of_term concl))
+  if isProp env evd concl then (Intset.is_empty (Evarutil.evars_of_term concl))
+  else true
 
 let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk =
   let rec aux s (acc : autogoal list list) fk = function
@@ -521,8 +521,11 @@ let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk
 		        (Goal.V82.env s gl) s' info.is_evar (Goal.V82.concl s gl)
 		    else true
 		  in
-		  let fk'' = if not needs_backtrack then
-		    (if !typeclasses_debug then msgnl (str"no backtrack on " ++ pr_ev s gl); fk) else fk' 
+		  let fk'' = 
+		    if not needs_backtrack then
+		      (if !typeclasses_debug then msgnl (str"no backtrack on " ++ pr_ev s gl ++ 
+							 str " after " ++ Lazy.force info.auto_last_tac); fk) 
+		    else fk' 
 		  in aux s' (gls'::acc) fk'' gls)
 	       fk {it = (gl,info); sigma = s})
     | [] -> Some (List.rev acc, s, fk)
@@ -560,7 +563,7 @@ let rec fix_limit limit (t : 'a tac) : 'a tac =
 let make_autogoal ?(only_classes=true) ?(st=full_transparent_state) cut ev g =
   let hints = make_autogoal_hints only_classes ~st g in
     (g.it, { hints = hints ; is_evar = ev; 
-	     only_classes = only_classes; auto_depth = []; auto_last_tac = lazy (mt());
+	     only_classes = only_classes; auto_depth = []; auto_last_tac = lazy (str"none");
 	     auto_path = []; auto_cut = cut })
       
 
