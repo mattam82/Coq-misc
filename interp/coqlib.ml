@@ -91,12 +91,12 @@ let logic_constant dir s = gen_constant "Coqlib" ("Logic"::dir) s
 let arith_dir = ["Coq";"Arith"]
 let arith_modules = [arith_dir]
 
+let numbers_dir = [ "Coq";"Numbers"]
 let parith_dir = ["Coq";"PArith"]
-
 let narith_dir = ["Coq";"NArith"]
-
 let zarith_dir = ["Coq";"ZArith"]
-let zarith_base_modules = [parith_dir;narith_dir;zarith_dir]
+
+let zarith_base_modules = [numbers_dir;parith_dir;narith_dir;zarith_dir]
 
 let init_dir = ["Coq";"Init"]
 let init_modules = [
@@ -287,7 +287,7 @@ let build_coq_sumbool () = Lazy.force coq_sumbool
 
 (* Equality on Type as a Type *)
 let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
-let coq_identity_refl = lazy_init_constant ["Datatypes"] "refl_identity"
+let coq_identity_refl = lazy_init_constant ["Datatypes"] "identity_refl"
 let coq_identity_ind = lazy_init_constant ["Datatypes"] "identity_ind"
 let coq_identity_congr = lazy_init_constant ["Logic_Type"] "identity_congr"
 let coq_identity_sym = lazy_init_constant ["Logic_Type"] "identity_sym"

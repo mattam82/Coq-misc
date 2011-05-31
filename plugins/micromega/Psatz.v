@@ -18,7 +18,7 @@ Require Import RMicromega.
 Require Import QArith.
 Require Export Ring_normalize.
 Require Import ZArith.
-Require Import Raxioms.
+Require Import Rdefinitions.
 Require Export RingMicromega.
 Require Import VarMap.
 Require Tauto.
@@ -66,6 +66,7 @@ Ltac psatzl dom :=
         change (Tauto.eval_f (Qeval_formula (@find Q 0%Q __varmap)) __ff) ;
         apply (QTautoChecker_sound __ff __wit); vm_compute ; reflexivity)
   | R =>
+    unfold Rdiv in * ; 
     psatzl_R ;
     (* If csdp is not installed, the previous step might not produce any
     progress: the rest of the tactical will then fail. Hence the 'try'. *)
@@ -75,11 +76,27 @@ Ltac psatzl dom :=
   | _ => fail "Unsupported domain"
   end in tac.
 
+
+Ltac lra := 
+    unfold Rdiv in * ; 
+    psatzl_R ;
+    try (intros __wit __varmap __ff ;
+        change (Tauto.eval_f (Reval_formula (@find R 0%R __varmap)) __ff) ;
+        apply (RTautoChecker_sound __ff __wit); vm_compute ; reflexivity).
+
+
 Ltac lia :=
-  xlia ;
+  cbv delta - [Zplus Zminus Zopp Zmult Zpower Zgt Zge Zle Zlt iff not] ; xlia ; 
   intros __wit __varmap __ff ;
     change (Tauto.eval_f (Zeval_formula (@find Z Z0 __varmap)) __ff) ;
       apply (ZTautoChecker_sound __ff __wit); vm_compute ; reflexivity.
+
+Ltac nlia :=
+  cbv delta - [Zplus Zminus Zopp Zmult Zpower Zgt Zge Zle Zlt iff not] ; xnlia ;
+  intros __wit __varmap __ff ;
+    change (Tauto.eval_f (Zeval_formula (@find Z Z0 __varmap)) __ff) ;
+      apply (ZTautoChecker_sound __ff __wit); vm_compute ; reflexivity.
+
 
 (* Local Variables: *)
 (* coding: utf-8 *)

@@ -97,6 +97,8 @@ module EvarInfoMap = struct
 
   let empty = ExistentialMap.empty, ExistentialMap.empty
 
+  let has_undefined (_,u) = not (ExistentialMap.is_empty u)
+
   let to_list (def,undef) =
     (* Workaround for change in Map.fold behavior in ocaml 3.08.4 *)
     let l = ref [] in
@@ -215,6 +217,7 @@ end
 module EvarMap = struct
   type t = EvarInfoMap.t * (Univ.UniverseLSet.t * Univ.universes)
   let empty = EvarInfoMap.empty, (Univ.UniverseLSet.empty, Univ.initial_universes)
+  let has_undefined (sigma,_) = EvarInfoMap.has_undefined sigma
   let add (sigma,sm) k v = (EvarInfoMap.add sigma k v, sm)
   let add_undefined (sigma,sm) k v = (EvarInfoMap.add_undefined sigma k v, sm)
   let find (sigma,_) = EvarInfoMap.find sigma
@@ -276,8 +279,7 @@ let map_fl f cfl = { cfl with rebus=f cfl.rebus }
     (e.g. the solution [P] to [?X u v = P u v] can be eta-expanded twice)
 *)
 
-type instance_constraint =
-    IsSuperType | IsSubType | ConvUpToEta of int | UserGiven
+type instance_constraint = IsSuperType | IsSubType | Conv
 
 (* Status of the unification of the type of an instance against the type of
      the meta it instantiates:
@@ -416,6 +418,9 @@ let empty =  {
   last_mods = ExistentialSet.empty;
   metas=Metamap.empty
 }
+
+let has_undefined evd =
+  EvarMap.has_undefined evd.evars
 
 let evars_reset_evd ?(with_conv_pbs=false) evd d = 
   {d with evars = evd.evars; 
@@ -668,7 +673,7 @@ let retract_coercible_metas evd =
   let mc,ml =
     Metamap.fold (fun n v (mc,ml) ->
       match v with
-	| Clval (na,(b,(UserGiven,CoerceToType as s)),typ) ->
+	| Clval (na,(b,(Conv,CoerceToType as s)),typ) ->
 	    (n,b.rebus,s)::mc, Metamap.add n (Cltyp (na,typ)) ml
 	| v ->
 	    mc, Metamap.add n v ml)
@@ -710,9 +715,7 @@ let pr_instance_status (sc,typ) =
   begin match sc with
   | IsSubType -> str " [or a subtype of it]"
   | IsSuperType -> str " [or a supertype of it]"
-  | ConvUpToEta 0 -> mt ()
-  | UserGiven -> mt ()
-  | ConvUpToEta n -> str" [or an eta-expansion up to " ++ int n ++ str" of it]"
+  | Conv -> mt ()
   end ++
   begin match typ with
   | CoerceToType -> str " [up to coercion]"

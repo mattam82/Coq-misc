@@ -247,8 +247,9 @@ let parse_args arglist =
 
     | "-vm" :: rem -> use_vm := true; parse rem
     | "-emacs" :: rem -> Flags.print_emacs := true; Pp.make_pp_emacs(); parse rem
-    | "-emacs-U" :: rem -> Flags.print_emacs := true;
-	Flags.print_emacs_safechar := true; Pp.make_pp_emacs(); parse rem
+    | "-emacs-U" :: rem ->
+	warning "Obsolete option \"-emacs-U\", use -emacs instead.";	
+	Flags.print_emacs := true; Pp.make_pp_emacs(); parse rem
 
     | "-unicode" :: rem -> add_require "Utf8_core"; parse rem
 
@@ -306,9 +307,9 @@ let parse_args arglist =
 	try
 	  Stream.empty s; exit 1
 	with Stream.Failure ->
-	  msgnl (Cerrors.explain_exn e); exit 1
+	  msgnl (Errors.print e); exit 1
       end
-    | e -> begin msgnl (Cerrors.explain_exn e); exit 1 end
+    | e -> begin msgnl (Errors.print e); exit 1 end
 
 let init arglist =
   Sys.catch_break false; (* Ctrl-C is fatal during the initialisation *)

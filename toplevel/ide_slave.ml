@@ -148,7 +148,7 @@ let rec attribute_of_vernac_command = function
   (* Proof management *)
   | VernacGoal _ -> [GoalStartingCommand]
 
-  | VernacAbort _ -> [NavigationCommand]
+  | VernacAbort _ -> []
   | VernacAbortAll -> [NavigationCommand]
   | VernacRestart -> [NavigationCommand]
   | VernacSuspend -> [NavigationCommand]
@@ -510,7 +510,7 @@ let explain_exn e =
       | Error_in_file (s, _, inner) -> None,inner
       | _ -> None,e
   in
-  toploc,(Cerrors.explain_exn exc)
+  toploc,(Errors.print exc)
 
 let eval_call c =
   let rec handle_exn e =

@@ -211,7 +211,7 @@ and check_with_aux_mod env mtb with_decl mp =
 		  SFBmodule msb -> msb
 		| _ -> error_not_a_module l
 	      in
-	      let _ = (lookup_module mp1 env) in ()
+	      let (_:module_body) = (lookup_module mp1 env) in ()
         | With_module_body (_::_,mp) ->
 	    let old = match spec with
 		SFBmodule msb -> msb
@@ -236,18 +236,23 @@ and check_with_aux_mod env mtb with_decl mp =
       | Reduction.NotConvertible -> error_with_incorrect l
 
 and check_module_type env mty =
-  let _ = check_modtype env mty.typ_expr mty.typ_mp mty.typ_delta in ()
+  let (_:struct_expr_body) =
+    check_modtype env mty.typ_expr mty.typ_mp mty.typ_delta in
+  ()
 
 							 
 and check_module env mp mb =
   match mb.mod_expr, mb.mod_type with
     | None,mtb -> 
-	let _ = check_modtype env mtb mb.mod_mp mb.mod_delta in ()
+	let (_:struct_expr_body) =
+	  check_modtype env mtb mb.mod_mp mb.mod_delta in ()
     | Some mexpr, mtb when mtb==mexpr ->
-	let _ = check_modtype env mtb mb.mod_mp mb.mod_delta in ()
+	let (_:struct_expr_body) =
+	  check_modtype env mtb mb.mod_mp mb.mod_delta in ()
     | Some mexpr, _ ->
 	let sign = check_modexpr env mexpr mb.mod_mp mb.mod_delta in
-	let _ = check_modtype env mb.mod_type mb.mod_mp mb.mod_delta in
+	let (_:struct_expr_body) =
+	  check_modtype env mb.mod_type mb.mod_mp mb.mod_delta in
           check_subtypes env 
 	    {typ_mp=mp;
 	     typ_expr=sign;
@@ -269,7 +274,7 @@ and check_structure_field env mp lab res = function
       let kn = mind_of_delta res kn in
 	Indtypes.check_inductive env kn mib
   | SFBmodule msb ->
-      let _= check_module env (MPdot(mp,lab)) msb in
+      let (_:unit) = check_module env (MPdot(mp,lab)) msb in
 	Modops.add_module msb env
   | SFBmodtype mty ->
       check_module_type env mty;
@@ -278,7 +283,7 @@ and check_structure_field env mp lab res = function
 and check_modexpr env mse mp_mse res = match mse with
   | SEBident mp ->
       let mb = lookup_module mp env in
-      	(subst_and_strengthen mb mp_mse env).mod_type
+      (subst_and_strengthen mb mp_mse).mod_type
   | SEBfunctor (arg_id, mtb, body) ->
       check_module_type env mtb ;
       let env' = add_module (module_body_of_type (MPbound arg_id) mtb) env in
@@ -291,7 +296,7 @@ and check_modexpr env mse mp_mse res = match mse with
 	try (path_of_mexpr m)
 	with Not_path -> error_application_to_not_path m
 	  (* place for nondep_supertype *) in
-      let mtb = module_type_of_module env (Some mp) (lookup_module mp env) in
+      let mtb = module_type_of_module (Some mp) (lookup_module mp env) in
 	check_subtypes env mtb farg_b;
 	(subst_struct_expr (map_mbid farg_id mp) fbody_b)
   | SEBwith(mte, with_decl) ->
@@ -299,7 +304,7 @@ and check_modexpr env mse mp_mse res = match mse with
       let sign = check_with env sign with_decl mp_mse in 
 	sign
   | SEBstruct(msb) ->
-      let _ = List.fold_left (fun env (lab,mb) ->
+      let (_:env) = List.fold_left (fun env (lab,mb) ->
 		   check_structure_field env mp_mse lab res mb) env msb in
 	SEBstruct(msb)
 	
@@ -319,7 +324,7 @@ and check_modtype env mse mp_mse res = match mse with
 	try (path_of_mexpr m)
 	with Not_path -> error_application_to_not_path m
 	  (* place for nondep_supertype *) in
-      let mtb = module_type_of_module env (Some mp) (lookup_module mp env) in
+      let mtb = module_type_of_module (Some mp) (lookup_module mp env) in
 	check_subtypes env mtb farg_b;
 	subst_struct_expr (map_mbid farg_id mp) fbody_b
   | SEBwith(mte, with_decl) ->
@@ -327,7 +332,7 @@ and check_modtype env mse mp_mse res = match mse with
       let sign = check_with env sign with_decl mp_mse in
 	sign
   | SEBstruct(msb) ->
-      let _ = List.fold_left (fun env (lab,mb) ->
+      let (_:env) = List.fold_left (fun env (lab,mb) ->
 		   check_structure_field env mp_mse lab res mb) env msb in
       SEBstruct(msb)
 	

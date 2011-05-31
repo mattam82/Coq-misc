@@ -185,11 +185,6 @@ type syntax_modifier =
   | SetOnlyParsing
   | SetFormat of string located
 
-type bullet = 
-  | Dash
-  | Star
-  | Plus
-
 type proof_end =
   | Admitted
   | Proved of opacity_flag * (lident * theorem_kind option) option
@@ -200,6 +195,11 @@ type scheme =
   | EqualityScheme of reference or_by_notation
 
 type inline = int option (* inlining level, none for no inlining *)
+
+type bullet =
+    | Dash
+    | Star
+    | Plus
 
 type vernac_expr =
   (* Control *)

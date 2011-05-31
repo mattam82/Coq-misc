@@ -210,10 +210,11 @@ let rec vernac_com interpfun (loc,com) =
 	  | HasNotFailed ->
 	      errorlabstrm "Fail" (str "The command has not failed !")
 	  | e ->
-	      (* if [e] is an anomaly, the next function will re-raise it *)
-	      let msg = Cerrors.explain_exn_no_anomaly e in
-	      if_verbose msgnl (str "The command has indeed failed with message:" ++
-		     fnl () ++ str "=> " ++ hov 0 msg)
+	      (* Anomalies are re-raised by the next line *)
+	      let msg = Errors.print_no_anomaly e in
+	      if_verbose msgnl
+		(str "The command has indeed failed with message:" ++
+		 fnl () ++ str "=> " ++ hov 0 msg)
 	end
 
     | VernacTime v ->

@@ -179,15 +179,14 @@ let check_sub mtb sub_mtb_l =
    environment. *)
 
 let check_subtypes mp sub_mtb_l =
-  let env = Global.env () in
-  let mb = Environ.lookup_module mp env in
-  let mtb = Modops.module_type_of_module env None mb in
+  let mb = Global.lookup_module mp in
+  let mtb = Modops.module_type_of_module None mb in
   check_sub mtb sub_mtb_l
 
 (* Same for module type [mp] *)
 
 let check_subtypes_mt mp sub_mtb_l =
-  check_sub (Environ.lookup_modtype mp (Global.env())) sub_mtb_l
+  check_sub (Global.lookup_modtype mp) sub_mtb_l
 
 (* Create a functor type entry *)
 
@@ -524,6 +523,24 @@ let process_module_bindings argids args =
       do_module false "start" load_objects 1 dir mp substobjs []
     in
       List.iter2 process_arg argids args
+
+(* Same with module_type_body *)
+
+let rec seb2mse = function
+  | SEBident mp -> MSEident mp
+  | SEBapply (s,s',_) -> MSEapply(seb2mse s, seb2mse s')
+  | SEBwith (s,With_module_body (l,mp)) -> MSEwith(seb2mse s,With_Module(l,mp))
+  | SEBwith (s,With_definition_body(l,cb)) ->
+      (match cb.const_body with
+	| Def c -> MSEwith(seb2mse s,With_Definition(l,Declarations.force c))
+	| _ -> assert false)
+  | _ -> failwith "seb2mse: received a non-atomic seb"
+
+let process_module_seb_binding mbid seb =
+  process_module_bindings [id_of_mbid mbid]
+    [mbid,
+     (seb2mse seb,
+      { ann_inline = DefaultInline; ann_scope_subst = [] })]
 
 let intern_args interp_modtype (idl,(arg,ann)) =
   let inl = inline_annot ann in

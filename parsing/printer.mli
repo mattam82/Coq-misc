@@ -104,7 +104,7 @@ val pr_transparent_state   : transparent_state -> std_ppcmds
 (** Proofs *)
 
 val pr_goal                : goal sigma -> std_ppcmds
-val pr_subgoals            : string option -> evar_map -> goal list -> std_ppcmds
+val pr_subgoals            : string option -> (unit -> bool) -> evar_map -> goal list -> std_ppcmds
 val pr_subgoal             : int -> evar_map -> goal list -> std_ppcmds
 val pr_concl               : int -> evar_map -> goal -> std_ppcmds
 
@@ -115,11 +115,17 @@ val pr_evars_int           : int -> (evar * evar_info) list -> std_ppcmds
 val pr_prim_rule           : prim_rule -> std_ppcmds
 
 (** Emacs/proof general support 
-   (emacs_str s alts) outputs
-   - s if emacs mode & unicode allowed,
-   - alts if emacs mode and & unicode not allowed
-   - nothing otherwise *)
-val emacs_str              : string -> string -> string
+   (emacs_str s) outputs
+    - s if emacs mode,
+    - nothing otherwise.
+    This function was previously used to insert special chars like
+    [(String.make 1 (Char.chr 253))] to parenthesize sub-parts of the
+    proof context for proof by pointing. This part of the code is
+    removed for now because it interacted badly with utf8. We may put
+    it back some day using some xml-like tags instead of special
+    chars. See for example the <prompt> tag in the prompt when in
+    emacs mode. *)
+val emacs_str              : string -> string
 
 (** Backwards compatibility *)
 
@@ -132,7 +138,7 @@ val pr_assumptionset : env -> Term.types Environ.ContextObjectMap.t ->std_ppcmds
 
 
 type printer_pr = {
- pr_subgoals            : string option -> evar_map -> goal list -> std_ppcmds;
+ pr_subgoals            : string option -> (unit -> bool) -> evar_map -> goal list -> std_ppcmds;
  pr_subgoal             : int -> evar_map -> goal list -> std_ppcmds;
  pr_goal                : goal sigma -> std_ppcmds;
 };;
@@ -143,3 +149,8 @@ val default_printer_pr : printer_pr
 
 val pr_instance_gmap : (global_reference, Typeclasses.instance Names.Cmap.t) Gmap.t ->
   Pp.std_ppcmds
+
+(** Inductive declarations *)
+
+val pr_mutual_inductive_body :
+  env -> mutual_inductive -> Declarations.mutual_inductive_body -> std_ppcmds

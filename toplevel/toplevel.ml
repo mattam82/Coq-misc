@@ -47,13 +47,12 @@ let resynch_buffer ibuf =
     | _ -> ()
 
 
-(* emacs special character for prompt end (fast) detection. Prefer
-   (Char.chr 6) since it does not interfere with utf8. For
-    compatibility we let (Char.chr 249) as default for a while. *)
+(* emacs special prompt tag for easy detection. No special character,
+   to avoid interfering with utf8. Compatibility code removed. *)
 
-let emacs_prompt_startstring() = Printer.emacs_str "" "<prompt>"
+let emacs_prompt_startstring() = Printer.emacs_str "<prompt>"
 
-let emacs_prompt_endstring() = Printer.emacs_str (String.make 1 (Char.chr 249)) "</prompt>"
+let emacs_prompt_endstring() = Printer.emacs_str "</prompt>"
 
 (* Read a char in an input channel, displaying a prompt at every
    beginning of line. *)
@@ -309,7 +308,7 @@ let print_toplevel_error exc =
 	raise Vernacexpr.Quit
     | _ ->
 	(if is_pervasive_exn exc then (mt ()) else locstrm) ++
-        Cerrors.explain_exn exc
+        Errors.print exc
 
 (* Read the input stream until a dot is encountered *)
 let parse_to_dot =

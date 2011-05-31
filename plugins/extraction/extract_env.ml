@@ -211,9 +211,8 @@ let rec extract_sfb_spec env mp = function
       if logical_spec s then specs
       else begin Visit.add_spec_deps s; (l,Spec s) :: specs end
   | (l,SFBmind _) :: msig ->
-      let kn = make_kn mp empty_dirpath l in
-      let mind = mind_of_kn kn in
-      let s = Sind (kn, extract_inductive env mind) in
+      let mind = make_mind mp empty_dirpath l in
+      let s = Sind (mind, extract_inductive env mind) in
       let specs = extract_sfb_spec env mp msig in
       if logical_spec s then specs
       else begin Visit.add_spec_deps s; (l,Spec s) :: specs end
@@ -294,11 +293,10 @@ let rec extract_sfb env mp all = function
 	 else ms)
   | (l,SFBmind mib) :: msb ->
       let ms = extract_sfb env mp all msb in
-      let kn = make_kn mp empty_dirpath l in
-      let mind = mind_of_kn kn in
+      let mind = make_mind mp empty_dirpath l in
       let b = Visit.needed_ind mind in
       if all || b then
-	let d = Dind (kn, extract_inductive env mind) in
+	let d = Dind (mind, extract_inductive env mind) in
 	if (not b) && (logical_decl d) then ms
 	else begin Visit.add_decl_deps d; (l,SEdecl d) :: ms end
       else ms
@@ -416,10 +414,18 @@ let print_one_decl struc mp decl =
 
 (*s Extraction of a ml struct to a file. *)
 
+(** For Recursive Extraction, writing directly on stdout
+    won't work with coqide, we use a buffer instead *)
+
+let buf = Buffer.create 1000
+
 let formatter dry file =
   let ft =
     if dry then Format.make_formatter (fun _ _ _ -> ()) (fun _ -> ())
-    else Pp_control.with_output_to (Option.default stdout file)
+    else
+      match file with
+	| Some f -> Pp_control.with_output_to f
+	| None -> Format.formatter_of_buffer buf
   in
   (* We never want to see ellipsis ... in extracted code *)
   Format.pp_set_max_boxes ft max_int;
@@ -433,6 +439,7 @@ let formatter dry file =
   ft
 
 let print_structure_to_file (fn,si,mo) dry struc =
+  Buffer.clear buf;
   let d = descr () in
   reset_renaming_tables AllButExternal;
   let unsafe_needs = {
@@ -475,7 +482,12 @@ let print_structure_to_file (fn,si,mo) dry struc =
 	 close_out cout; raise e
        end;
        info_file si)
-    (if dry then None else si)
+    (if dry then None else si);
+  (* Print the buffer content via Coq standard formatter (ok with coqide). *)
+  if Buffer.length buf <> 0 then begin
+    Pp.message (Buffer.contents buf);
+    Buffer.reset buf
+  end
 
 
 (*********************************************)
@@ -506,7 +518,8 @@ let rec locate_ref = function
   | r::l ->
       let q = snd (qualid_of_reference r) in
       let mpo = try Some (Nametab.locate_module q) with Not_found -> None
-      and ro = try Some (Nametab.locate q) with Not_found -> None in
+      and ro = try Some (Smartlocate.global_with_alias r) with _ -> None
+      in
       match mpo, ro with
 	| None, None -> Nametab.error_global_not_found q
 	| None, Some r -> let refs,mps = locate_ref l in r::refs,mps

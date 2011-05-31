@@ -6,690 +6,1132 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-Require Import BinPos.
+Require Export BinNums.
+Require Import BinPos RelationClasses Morphisms Setoid
+ Equalities GenericMinMax Bool NAxioms NProperties.
+Require BinNatDef.
 
 (**********************************************************************)
-(** Binary natural numbers *)
+(** * Binary natural numbers, operations and properties *)
+(**********************************************************************)
 
-Inductive N : Set :=
-  | N0 : N
-  | Npos : positive -> N.
+(** The type [N] and its constructors [N0] and [Npos] are now
+    defined in [BinNums.v] *)
 
-(** Declare binding key for scope positive_scope *)
-
-Delimit Scope N_scope with N.
-
-(** Automatically open scope positive_scope for the constructors of N *)
-
-Bind Scope N_scope with N.
-Arguments Scope Npos [positive_scope].
+(** Every definitions and properties about binary natural numbers
+    are placed in a module [N] for qualification purpose. *)
 
 Local Open Scope N_scope.
 
-(** Some local ad-hoc notation, since no interpretation of numerical
-  constants is available yet. *)
+(** Every definitions and early properties about positive numbers
+    are placed in a module [N] for qualification purpose. *)
 
-Local Notation "0" := N0 : N_scope.
-Local Notation "1" := (Npos 1) : N_scope.
-Local Notation "2" := (Npos 2) : N_scope.
+Module N
+ <: NAxiomsSig
+ <: UsualOrderedTypeFull
+ <: UsualDecidableTypeFull
+ <: TotalOrder.
 
-Definition Ndiscr : forall n:N, { p:positive | n = Npos p } + { n = N0 }.
-Proof.
- destruct n; auto.
- left; exists p; auto.
-Defined.
+(** Definitions of operations, now in a separate file *)
 
-(** Operation x -> 2*x+1 *)
+Include BinNatDef.N.
 
-Definition Ndouble_plus_one x :=
-  match x with
-  | 0 => Npos 1
-  | Npos p => Npos p~1
-  end.
+(** Logical predicates *)
 
-(** Operation x -> 2*x *)
+Definition eq := @Logic.eq N.
+Definition eq_equiv := @eq_equivalence N.
 
-Definition Ndouble n :=
-  match n with
-  | 0 => 0
-  | Npos p => Npos p~0
-  end.
+Definition lt x y := (x ?= y) = Lt.
+Definition gt x y := (x ?= y) = Gt.
+Definition le x y := (x ?= y) <> Gt.
+Definition ge x y := (x ?= y) <> Lt.
 
-(** Successor *)
-
-Definition Nsucc n :=
-  match n with
-  | 0 => Npos 1
-  | Npos p => Npos (Psucc p)
-  end.
-
-(** Predecessor *)
-
-Definition Npred (n : N) := match n with
-| 0 => 0
-| Npos p => match p with
-  | xH => 0
-  | _ => Npos (Ppred p)
-  end
-end.
-
-(** The successor of a N can be seen as a positive *)
-
-Definition Nsucc_pos (n : N) : positive :=
- match n with
-   | N0 => 1%positive
-   | Npos p => Psucc p
- end.
-
-(** Similarly, the predecessor of a positive, seen as a N *)
-
-Definition Ppred_N (p:positive) : N :=
- match p with
-   | 1 => N0
-   | p~1 => Npos (p~0)
-   | p~0 => Npos (Pdouble_minus_one p)
- end%positive.
-
-(** Addition *)
-
-Definition Nplus n m :=
-  match n, m with
-  | 0, _ => m
-  | _, 0 => n
-  | Npos p, Npos q => Npos (p + q)
-  end.
-
-Infix "+" := Nplus : N_scope.
-
-(** Subtraction *)
-
-Definition Nminus (n m : N) :=
-match n, m with
-| 0, _ => 0
-| n, 0 => n
-| Npos n', Npos m' =>
-  match Pminus_mask n' m' with
-  | IsPos p => Npos p
-  | _ => 0
-  end
-end.
-
-Infix "-" := Nminus : N_scope.
-
-(** Multiplication *)
-
-Definition Nmult n m :=
-  match n, m with
-  | 0, _ => 0
-  | _, 0 => 0
-  | Npos p, Npos q => Npos (p * q)
-  end.
-
-Infix "*" := Nmult : N_scope.
-
-(** Boolean Equality *)
-
-Definition Neqb n m :=
- match n, m with
-  | 0, 0 => true
-  | Npos n, Npos m => Peqb n m
-  | _,_ => false
- end.
-
-(** Order *)
-
-Definition Ncompare n m :=
-  match n, m with
-  | 0, 0 => Eq
-  | 0, Npos m' => Lt
-  | Npos n', 0 => Gt
-  | Npos n', Npos m' => (n' ?= m')%positive Eq
-  end.
-
-Infix "?=" := Ncompare (at level 70, no associativity) : N_scope.
-
-Definition Nlt (x y:N) := (x ?= y) = Lt.
-Definition Ngt (x y:N) := (x ?= y) = Gt.
-Definition Nle (x y:N) := (x ?= y) <> Gt.
-Definition Nge (x y:N) := (x ?= y) <> Lt.
-
-Infix "<=" := Nle : N_scope.
-Infix "<" := Nlt : N_scope.
-Infix ">=" := Nge : N_scope.
-Infix ">" := Ngt : N_scope.
+Infix "<=" := le : N_scope.
+Infix "<" := lt : N_scope.
+Infix ">=" := ge : N_scope.
+Infix ">" := gt : N_scope.
 
 Notation "x <= y <= z" := (x <= y /\ y <= z) : N_scope.
 Notation "x <= y < z" := (x <= y /\ y < z) : N_scope.
 Notation "x < y < z" := (x < y /\ y < z) : N_scope.
 Notation "x < y <= z" := (x < y /\ y <= z) : N_scope.
 
-(** Min and max *)
+Definition divide p q := exists r, p*r = q.
+Notation "( p | q )" := (divide p q) (at level 0) : N_scope.
 
-Definition Nmin (n n' : N) := match Ncompare n n' with
- | Lt | Eq => n
- | Gt => n'
- end.
-
-Definition Nmax (n n' : N) := match Ncompare n n' with
- | Lt | Eq => n'
- | Gt => n
- end.
-
-(** Translation from [N] to [nat] and back. *)
-
-Definition nat_of_N (a:N) :=
-  match a with
-  | N0 => O
-  | Npos p => nat_of_P p
-  end.
-
-Definition N_of_nat (n:nat) :=
-  match n with
-  | O => 0
-  | S n' => Npos (P_of_succ_nat n')
-  end.
+Definition Even n := exists m, n = 2*m.
+Definition Odd n := exists m, n = 2*m+1.
 
 (** Decidability of equality. *)
 
-Definition N_eq_dec : forall n m : N, { n = m } + { n <> m }.
+Definition eq_dec : forall n m : N, { n = m } + { n <> m }.
 Proof.
  decide equality.
- apply positive_eq_dec.
+ apply Pos.eq_dec.
 Defined.
 
-(** convenient induction principles *)
+(** Discrimination principle *)
 
-Lemma N_ind_double :
- forall (a:N) (P:N -> Prop),
-   P 0 ->
-   (forall a, P a -> P (Ndouble a)) ->
-   (forall a, P a -> P (Ndouble_plus_one a)) -> P a.
+Definition discr n : { p:positive | n = Npos p } + { n = N0 }.
 Proof.
- intros a P P0 P2 PS2. destruct a as [|p]. trivial.
- induction p as [p IHp|p IHp| ].
- now apply (PS2 (Npos p)).
- now apply (P2 (Npos p)).
- now apply (PS2 0).
-Qed.
+ destruct n; auto.
+ left; exists p; auto.
+Defined.
 
-Lemma N_rec_double :
- forall (a:N) (P:N -> Set),
-   P 0 ->
-   (forall a, P a -> P (Ndouble a)) ->
-   (forall a, P a -> P (Ndouble_plus_one a)) -> P a.
-Proof.
- intros a P P0 P2 PS2. destruct a as [|p]. trivial.
- induction p as [p IHp|p IHp| ].
- now apply (PS2 (Npos p)).
- now apply (P2 (Npos p)).
- now apply (PS2 0).
-Qed.
+(** Convenient induction principles *)
+
+Definition binary_rect (P:N -> Type) (f0 : P 0)
+  (f2 : forall n, P n -> P (double n))
+  (fS2 : forall n, P n -> P (succ_double n)) (n : N) : P n :=
+ let P' p := P (Npos p) in
+ let f2' p := f2 (Npos p) in
+ let fS2' p := fS2 (Npos p) in
+ match n with
+ | 0 => f0
+ | Npos p => positive_rect P' fS2' f2' (fS2 0 f0) p
+ end.
+
+Definition binary_rec (P:N -> Set) := binary_rect P.
+Definition binary_ind (P:N -> Prop) := binary_rect P.
 
 (** Peano induction on binary natural numbers *)
 
-Definition Nrect
-  (P : N -> Type) (a : P 0)
-    (f : forall n : N, P n -> P (Nsucc n)) (n : N) : P n :=
-let f' (p : positive) (x : P (Npos p)) := f (Npos p) x in
-let P' (p : positive) := P (Npos p) in
-match n return (P n) with
-| 0 => a
-| Npos p => Prect P' (f 0 a) f' p
+Definition peano_rect
+  (P : N -> Type) (f0 : P 0)
+    (f : forall n : N, P n -> P (succ n)) (n : N) : P n :=
+let P' p := P (Npos p) in
+let f' p := f (Npos p) in
+match n with
+| 0 => f0
+| Npos p => Pos.peano_rect P' (f 0 f0) f' p
 end.
 
-Theorem Nrect_base : forall P a f, Nrect P a f 0 = a.
+Theorem peano_rect_base P a f : peano_rect P a f 0 = a.
 Proof.
-intros P a f; simpl; reflexivity.
+reflexivity.
 Qed.
 
-Theorem Nrect_step : forall P a f n, Nrect P a f (Nsucc n) = f n (Nrect P a f n).
+Theorem peano_rect_succ P a f n :
+ peano_rect P a f (succ n) = f n (peano_rect P a f n).
 Proof.
-intros P a f; destruct n as [| p]; simpl;
-[rewrite Prect_base | rewrite Prect_succ]; reflexivity.
+destruct n; simpl.
+trivial.
+now rewrite Pos.peano_rect_succ.
 Qed.
 
-Definition Nind (P : N -> Prop) := Nrect P.
+Definition peano_ind (P : N -> Prop) := peano_rect P.
 
-Definition Nrec (P : N -> Set) := Nrect P.
+Definition peano_rec (P : N -> Set) := peano_rect P.
 
-Theorem Nrec_base : forall P a f, Nrec P a f 0 = a.
+Theorem peano_rec_base P a f : peano_rec P a f 0 = a.
 Proof.
-intros P a f; unfold Nrec; apply Nrect_base.
+apply peano_rect_base.
 Qed.
 
-Theorem Nrec_step : forall P a f n, Nrec P a f (Nsucc n) = f n (Nrec P a f n).
+Theorem peano_rec_succ P a f n :
+ peano_rec P a f (succ n) = f n (peano_rec P a f n).
 Proof.
-intros P a f; unfold Nrec; apply Nrect_step.
-Qed.
-
-(** Properties of successor and predecessor *)
-
-Theorem Npred_succ : forall n : N, Npred (Nsucc n) = n.
-Proof.
-intros [| p]; simpl. reflexivity.
-case_eq (Psucc p); try (intros q H; rewrite <- H; now rewrite Ppred_succ).
-intro H; false_hyp H Psucc_not_one.
-Qed.
-
-Theorem Npred_minus : forall n, Npred n = Nminus n (Npos 1).
-Proof.
- intros [|[p|p|]]; trivial.
-Qed.
-
-Lemma Nsucc_pred : forall n, n<>0 -> Nsucc (Npred n) = n.
-Proof.
- intros [|n] H; (now destruct H) || clear H.
- rewrite Npred_minus. simpl. destruct n; simpl; trivial.
- f_equal; apply Psucc_o_double_minus_one_eq_xO.
+apply peano_rect_succ.
 Qed.
 
 (** Properties of mixed successor and predecessor. *)
 
-Lemma Ppred_N_spec : forall p, Ppred_N p = Npred (Npos p).
+Lemma pos_pred_spec p : Pos.pred_N p = pred (Npos p).
 Proof.
  now destruct p.
 Qed.
 
-Lemma Nsucc_pos_spec : forall n, Npos (Nsucc_pos n) = Nsucc n.
+Lemma succ_pos_spec n : Npos (succ_pos n) = succ n.
 Proof.
  now destruct n.
 Qed.
 
-Lemma Ppred_Nsucc : forall n, Ppred_N (Nsucc_pos n) = n.
+Lemma pos_pred_succ n : Pos.pred_N (succ_pos n) = n.
 Proof.
- intros. now rewrite Ppred_N_spec, Nsucc_pos_spec, Npred_succ.
+ destruct n. trivial. apply Pos.pred_N_succ.
 Qed.
 
-(** Properties of addition *)
+Lemma succ_pos_pred p : succ (Pos.pred_N p) = Npos p.
+Proof.
+ destruct p; simpl; trivial. f_equal. apply Pos.succ_pred_double.
+Qed.
 
-Theorem Nplus_0_l : forall n:N, 0 + n = n.
+(** Properties of successor and predecessor *)
+
+Theorem pred_succ n : pred (succ n) = n.
+Proof.
+destruct n; trivial. simpl. apply Pos.pred_N_succ.
+Qed.
+
+Theorem pred_sub n : pred n = sub n 1.
+Proof.
+ now destruct n as [|[p|p|]].
+Qed.
+
+Theorem succ_0_discr n : succ n <> 0.
+Proof.
+now destruct n.
+Qed.
+
+(** Specification of addition *)
+
+Theorem add_0_l n : 0 + n = n.
 Proof.
 reflexivity.
 Qed.
 
-Theorem Nplus_0_r : forall n:N, n + 0 = n.
+Theorem add_succ_l n m : succ n + m = succ (n + m).
 Proof.
-destruct n; reflexivity.
+destruct n, m; unfold succ, add; now rewrite ?Pos.add_1_l, ?Pos.add_succ_l.
 Qed.
 
-Theorem Nplus_comm : forall n m:N, n + m = m + n.
-Proof.
-intros.
-destruct n; destruct m; simpl; try reflexivity.
-rewrite Pplus_comm; reflexivity.
-Qed.
+(** Specification of subtraction. *)
 
-Theorem Nplus_assoc : forall n m p:N, n + (m + p) = n + m + p.
-Proof.
-intros.
-destruct n; try reflexivity.
-destruct m; try reflexivity.
-destruct p; try reflexivity.
-simpl; rewrite Pplus_assoc; reflexivity.
-Qed.
-
-Theorem Nplus_succ : forall n m:N, Nsucc n + m = Nsucc (n + m).
-Proof.
-destruct n, m.
-  simpl; reflexivity.
-  unfold Nsucc, Nplus; rewrite <- Pplus_one_succ_l; reflexivity.
-  simpl; reflexivity.
-  simpl; rewrite Pplus_succ_permute_l; reflexivity.
-Qed.
-
-Theorem Nsucc_0 : forall n : N, Nsucc n <> 0.
+Theorem sub_0_r n : n - 0 = n.
 Proof.
 now destruct n.
 Qed.
 
-Theorem Nsucc_inj : forall n m:N, Nsucc n = Nsucc m -> n = m.
+Theorem sub_succ_r n m : n - succ m = pred (n - m).
 Proof.
-intros [|p] [|q] H; simpl in *; trivial; injection H; clear H; intro H.
-  now elim (Psucc_not_one q).
-  now elim (Psucc_not_one p).
-  apply Psucc_inj in H. now f_equal.
-Qed.
-
-Theorem Nplus_reg_l : forall n m p:N, n + m = n + p -> m = p.
-Proof.
- induction n using Nind.
-  trivial.
-  intros m p H; rewrite 2 Nplus_succ in H.
-  apply Nsucc_inj in H. now apply IHn.
-Qed.
-
-(** Properties of subtraction. *)
-
-Lemma Nminus_N0_Nle : forall n n' : N, n - n' = 0 <-> n <= n'.
-Proof.
-intros [| p] [| q]; unfold Nle; simpl;
-split; intro H; try easy.
-now elim H.
-contradict H. now destruct (Pminus_mask_Gt _ _ H) as (h & -> & _).
-destruct (Pcompare_spec p q); try now elim H.
-subst. now rewrite Pminus_mask_diag.
-now rewrite Pminus_mask_Lt.
-Qed.
-
-Theorem Nminus_0_r : forall n : N, n - 0 = n.
-Proof.
-now destruct n.
-Qed.
-
-Theorem Nminus_succ_r : forall n m : N, n - (Nsucc m) = Npred (n - m).
-Proof.
-intros [|p] [|q]; trivial.
+destruct n as [|p], m as [|q]; trivial.
 now destruct p.
-simpl. rewrite Pminus_mask_succ_r, Pminus_mask_carry_spec.
-now destruct (Pminus_mask p q) as [|[r|r|]|].
+simpl. rewrite Pos.sub_mask_succ_r, Pos.sub_mask_carry_spec.
+now destruct (Pos.sub_mask p q) as [|[r|r|]|].
 Qed.
 
-(** Properties of multiplication *)
+(** Specification of multiplication *)
 
-Theorem Nmult_0_l : forall n:N, 0 * n = 0.
+Theorem mul_0_l n : 0 * n = 0.
 Proof.
 reflexivity.
 Qed.
 
-Theorem Nmult_1_l : forall n:N, Npos 1 * n = n.
+Theorem mul_succ_l n m : (succ n) * m = n * m + m.
 Proof.
-destruct n; reflexivity.
-Qed.
-
-Theorem Nmult_Sn_m : forall n m : N, (Nsucc n) * m = m + n * m.
-Proof.
-intros [|n] [|m]; simpl; trivial. now rewrite Pmult_Sn_m.
-Qed.
-
-Theorem Nmult_1_r : forall n:N, n * Npos 1%positive = n.
-Proof.
-intros [|n]; simpl; trivial. now rewrite Pmult_1_r.
-Qed.
-
-Theorem Nmult_comm : forall n m:N, n * m = m * n.
-Proof.
-intros [|n] [|m]; simpl; trivial. now rewrite Pmult_comm.
-Qed.
-
-Theorem Nmult_assoc : forall n m p:N, n * (m * p) = n * m * p.
-Proof.
-intros.
-destruct n; try reflexivity.
-destruct m; try reflexivity.
-destruct p; try reflexivity.
-simpl; rewrite Pmult_assoc; reflexivity.
-Qed.
-
-Theorem Nmult_plus_distr_r : forall n m p:N, (n + m) * p = n * p + m * p.
-Proof.
-intros.
-destruct n; try reflexivity.
-destruct m; destruct p; try reflexivity.
-simpl; rewrite Pmult_plus_distr_r; reflexivity.
-Qed.
-
-Theorem Nmult_plus_distr_l : forall n m p:N, p * (n + m) = p * n + p * m.
-Proof.
-intros. rewrite ! (Nmult_comm p); apply Nmult_plus_distr_r.
-Qed.
-
-Theorem Nmult_reg_r : forall n m p:N, p <> 0 -> n * p = m * p -> n = m.
-Proof.
-destruct p; intros Hp H.
-contradiction Hp; reflexivity.
-destruct n; destruct m; reflexivity || (try discriminate H).
-injection H; clear H; intro H; rewrite Pmult_reg_r with (1 := H); reflexivity.
-Qed.
-
-(** Properties of boolean order. *)
-
-Lemma Neqb_eq : forall n m, Neqb n m = true <-> n=m.
-Proof.
-destruct n as [|n], m as [|m]; simpl; split; auto; try discriminate.
-intros; f_equal. apply (Peqb_eq n m); auto.
-intros. apply (Peqb_eq n m). congruence.
+destruct n, m; simpl; trivial. f_equal. rewrite Pos.add_comm.
+apply Pos.mul_succ_l.
 Qed.
 
 (** Properties of comparison *)
 
-Lemma Nle_0 : forall n, 0<=n.
+Lemma compare_refl n : (n ?= n) = Eq.
+Proof.
+destruct n; simpl; trivial. apply Pos.compare_refl.
+Qed.
+
+Theorem compare_eq n m : (n ?= m) = Eq -> n = m.
+Proof.
+destruct n, m; simpl; try easy. intros. f_equal.
+now apply Pos.compare_eq.
+Qed.
+
+Theorem compare_eq_iff n m : (n ?= m) = Eq <-> n = m.
+Proof.
+split; intros. now apply compare_eq. subst; now apply compare_refl.
+Qed.
+
+Lemma compare_antisym n m : CompOpp (n ?= m) = (m ?= n).
+Proof.
+destruct n, m; simpl; trivial.
+symmetry. apply Pos.compare_antisym. (* TODO : quel sens ? *)
+Qed.
+
+(** Specification of lt and le *)
+
+Theorem lt_irrefl n : ~ n < n.
+Proof.
+unfold lt. now rewrite compare_refl.
+Qed.
+
+Lemma lt_eq_cases n m : n <= m <-> n < m \/ n=m.
+Proof.
+unfold le, lt. rewrite <- compare_eq_iff.
+destruct (n ?= m); now intuition.
+Qed.
+
+Lemma lt_succ_r n m : n < succ m <-> n<=m.
+Proof.
+destruct n as [|p], m as [|q]; simpl; try easy'.
+split. now destruct p. now destruct 1.
+apply Pos.lt_succ_r.
+Qed.
+
+Lemma compare_spec n m : CompareSpec (n=m) (n<m) (m<n) (n ?= m).
+Proof.
+case_eq (n ?= m); intro H; constructor; trivial.
+now apply compare_eq.
+red. now rewrite <- compare_antisym, H.
+Qed.
+
+(** Properties of boolean comparisons. *)
+
+Lemma eqb_eq n m : eqb n m = true <-> n=m.
+Proof.
+destruct n as [|n], m as [|m]; simpl; try easy'.
+rewrite Pos.eqb_eq. split; intro H. now subst. now destr_eq H.
+Qed.
+
+Lemma ltb_lt n m : (n <? m) = true <-> n < m.
+Proof.
+  unfold ltb, lt. destruct compare; easy'.
+Qed.
+
+Lemma leb_le n m : (n <=? m) = true <-> n <= m.
+Proof.
+  unfold leb, le. destruct compare; easy'.
+Qed.
+
+Lemma leb_spec n m : BoolSpec (n<=m) (m<n) (n <=? m).
+Proof.
+ unfold le, lt, leb. rewrite <- (compare_antisym n m).
+ case compare; now constructor.
+Qed.
+
+Lemma ltb_spec n m : BoolSpec (n<m) (m<=n) (n <? m).
+Proof.
+ unfold le, lt, ltb. rewrite <- (compare_antisym n m).
+ case compare; now constructor.
+Qed.
+
+(** We regroup here some results used for proving the correctness
+    of more advanced functions. These results will also be provided
+    by the generic functor of properties about natural numbers
+    instantiated at the end of the file. *)
+
+Module Import BootStrap.
+
+Theorem add_0_r n : n + 0 = n.
+Proof.
+now destruct n.
+Qed.
+
+Theorem add_comm n m : n + m = m + n.
+Proof.
+destruct n, m; simpl; try reflexivity. simpl. f_equal. apply Pos.add_comm.
+Qed.
+
+Theorem add_assoc n m p : n + (m + p) = n + m + p.
+Proof.
+destruct n; try reflexivity.
+destruct m; try reflexivity.
+destruct p; try reflexivity.
+simpl. f_equal. apply Pos.add_assoc.
+Qed.
+
+Lemma sub_add n m : n <= m -> m - n + n = m.
+Proof.
+ destruct n as [|p], m as [|q]; simpl; try easy'.
+ unfold le, compare. rewrite Pos.compare_antisym. intros H.
+ assert (H1 := Pos.sub_mask_compare q p).
+ assert (H2 := Pos.sub_mask_add q p).
+ destruct Pos.sub_mask as [|r|]; simpl in *; f_equal.
+ symmetry. now apply Pos.compare_eq.
+ rewrite Pos.add_comm. now apply H2.
+ rewrite <- H1 in H. now destruct H.
+Qed.
+
+Theorem mul_comm n m : n * m = m * n.
+Proof.
+destruct n, m; simpl; trivial. f_equal. apply Pos.mul_comm.
+Qed.
+
+Lemma le_0_l n : 0<=n.
+Proof.
+now destruct n.
+Qed.
+
+Lemma add_lt_cancel_l n m p : p+n < p+m -> n<m.
+Proof.
+ intro H. destruct p. simpl; auto.
+ destruct n; destruct m.
+ elim (lt_irrefl _ H).
+ red; auto.
+ rewrite add_0_r in H. simpl in H.
+ red in H. simpl in H.
+ elim (Pos.lt_not_add_l _ _ H).
+ now apply (Pos.add_lt_mono_l p).
+Qed.
+
+End BootStrap.
+
+
+(** Properties of [double] and [succ_double] *)
+
+Lemma double_spec n : double n = 2 * n.
+Proof.
+ reflexivity.
+Qed.
+
+Lemma succ_double_spec n : succ_double n = 2 * n + 1.
 Proof.
  now destruct n.
 Qed.
 
-Lemma Ncompare_refl : forall n, (n ?= n) = Eq.
+Lemma double_add n m : double (n+m) = double n + double m.
 Proof.
-destruct n; simpl; auto.
-apply Pcompare_refl.
+ now destruct n, m.
 Qed.
 
-Theorem Ncompare_Eq_eq : forall n m:N, (n ?= m) = Eq -> n = m.
+Lemma succ_double_add n m : succ_double (n+m) = double n + succ_double m.
 Proof.
-destruct n as [| n]; destruct m as [| m]; simpl; intro H;
- reflexivity || (try discriminate H).
-  rewrite (Pcompare_Eq_eq n m H); reflexivity.
+ now destruct n, m.
 Qed.
 
-Theorem Ncompare_eq_correct : forall n m:N, (n ?= m) = Eq <-> n = m.
+Lemma double_mul n m : double (n*m) = double n * m.
 Proof.
-split; intros;
- [ apply Ncompare_Eq_eq; auto | subst; apply Ncompare_refl ].
+ now destruct n, m.
 Qed.
 
-Lemma Ncompare_antisym : forall n m, CompOpp (n ?= m) = (m ?= n).
+Lemma succ_double_mul n m :
+ succ_double n * m = double n * m + m.
 Proof.
-destruct n; destruct m; simpl; auto.
-exact (Pcompare_antisym p p0 Eq).
+ destruct n; simpl; destruct m; trivial.
+ now rewrite Pos.add_comm.
 Qed.
 
-Lemma Ngt_Nlt : forall n m, n > m -> m < n.
+Lemma div2_double n : div2 (double n) = n.
 Proof.
-unfold Ngt, Nlt; intros n m GT.
-rewrite <- Ncompare_antisym, GT; reflexivity.
+now destruct n.
 Qed.
 
-Theorem Nlt_irrefl : forall n : N, ~ n < n.
+Lemma div2_succ_double n : div2 (succ_double n) = n.
 Proof.
-intro n; unfold Nlt; now rewrite Ncompare_refl.
+now destruct n.
 Qed.
 
-Theorem Nlt_trans : forall n m q, n < m -> m < q -> n < q.
+Lemma double_inj n m : double n = double m -> n = m.
 Proof.
-destruct n;
- destruct m; try discriminate;
- destruct q; try discriminate; auto.
-eapply Plt_trans; eauto.
+intro H. rewrite <- (div2_double n), H. apply div2_double.
 Qed.
 
-Theorem Nlt_not_eq : forall n m, n < m -> ~ n = m.
+Lemma succ_double_inj n m : succ_double n = succ_double m -> n = m.
 Proof.
- intros n m LT EQ. subst m. elim (Nlt_irrefl n); auto.
+intro H. rewrite <- (div2_succ_double n), H. apply div2_succ_double.
 Qed.
 
-Theorem Ncompare_n_Sm :
-  forall n m : N, (n ?= Nsucc m) = Lt <-> (n ?= m) = Lt \/ n = m.
+Lemma succ_double_lt n m : n<m -> succ_double n < double m.
 Proof.
-intros [|p] [|q]; simpl; split; intros H; auto.
-destruct p; discriminate.
-destruct H; discriminate.
-apply Pcompare_p_Sq in H; destruct H; subst; auto.
-apply Pcompare_p_Sq; destruct H; [left|right]; congruence.
+ destruct n as [|n], m as [|m]; intros H; try easy.
+ unfold lt in *; simpl in *. now rewrite Pos.compare_xI_xO, H.
 Qed.
 
-Lemma Nle_lteq : forall x y, x <= y <-> x < y \/ x=y.
+
+(** Specification of minimum and maximum *)
+
+Theorem min_l n m : n <= m -> min n m = n.
 Proof.
-unfold Nle, Nlt; intros.
-generalize (Ncompare_eq_correct x y).
-destruct (x ?= y); intuition; discriminate.
+unfold min, le. case compare; trivial. now destruct 1.
 Qed.
 
-Lemma Nlt_succ_r : forall n m,  n < Nsucc m <-> n<=m.
+Theorem min_r n m : m <= n -> min n m = m.
 Proof.
-intros n m.
-eapply iff_trans. apply Ncompare_n_Sm. apply iff_sym, Nle_lteq.
+unfold min, le. rewrite <- compare_antisym.
+case compare_spec; trivial. now destruct 2.
 Qed.
 
-Lemma Nle_trans : forall n m p, n<=m -> m<=p -> n<=p.
+Theorem max_l n m : m <= n -> max n m = n.
 Proof.
- intros n m p H H'.
- apply Nle_lteq. apply Nle_lteq in H. apply Nle_lteq in H'.
- destruct H, H'; subst; auto.
- left; now apply Nlt_trans with m.
+unfold max, le. rewrite <- compare_antisym.
+case compare_spec; auto. now destruct 2.
 Qed.
 
-Lemma Nle_succ_l : forall n m, Nsucc n <= m <-> n < m.
+Theorem max_r n m : n <= m -> max n m = m.
 Proof.
- intros.
- unfold Nle, Nlt.
- rewrite <- 2 (Ncompare_antisym m).
- generalize (Nlt_succ_r m n). unfold Nle,Nlt.
- destruct Ncompare, Ncompare; simpl; intros (U,V);
-  intuition; now try discriminate V.
-Qed.
-
-Lemma Ncompare_spec : forall x y, CompareSpec (x=y) (x<y) (y<x) (x ?= y).
-Proof.
-intros.
-destruct (Ncompare x y) as [ ]_eqn; constructor; auto.
-apply Ncompare_Eq_eq; auto.
-apply Ngt_Nlt; auto.
-Qed.
-
-(** Order and operations *)
-
-(** NB : Many more results will come from NBinary, the Number instantiation.
-    The next lemmas are useful for proving the correctness of
-    advanced functions.
-*)
-
-Lemma Nplus_lt_cancel_l : forall n m p, p+n < p+m -> n<m.
-Proof.
- intros. destruct p. simpl; auto.
- destruct n; destruct m.
- elim (Nlt_irrefl _ H).
- red; auto.
- rewrite Nplus_0_r in H. simpl in H.
- red in H. simpl in H.
- elim (Plt_not_plus_l _ _ H).
- now apply (Pplus_lt_mono_l p).
+unfold max, le. case compare; trivial. now destruct 1.
 Qed.
 
 (** 0 is the least natural number *)
 
-Theorem Ncompare_0 : forall n : N, Ncompare n 0 <> Lt.
+Theorem compare_0_r n : (n ?= 0) <> Lt.
 Proof.
-destruct n; discriminate.
+now destruct n.
 Qed.
 
-(** Dividing by 2 *)
+(** Specifications of power *)
 
-Definition Ndiv2 (n:N) :=
-  match n with
-  | 0 => 0
-  | Npos 1 => 0
-  | Npos (p~0) => Npos p
-  | Npos (p~1) => Npos p
-  end.
-
-Lemma Ndouble_div2 : forall n:N, Ndiv2 (Ndouble n) = n.
-Proof.
-  destruct n; trivial.
-Qed.
-
-Lemma Ndouble_plus_one_div2 :
- forall n:N, Ndiv2 (Ndouble_plus_one n) = n.
-Proof.
-  destruct n; trivial.
-Qed.
-
-Lemma Ndouble_inj : forall n m, Ndouble n = Ndouble m -> n = m.
-Proof.
-  intros. rewrite <- (Ndouble_div2 n). rewrite H. apply Ndouble_div2.
-Qed.
-
-Lemma Ndouble_plus_one_inj :
- forall n m, Ndouble_plus_one n = Ndouble_plus_one m -> n = m.
-Proof.
-  intros. rewrite <- (Ndouble_plus_one_div2 n). rewrite H. apply Ndouble_plus_one_div2.
-Qed.
-
-(** Power *)
-
-Definition Npow n p :=
-  match p, n with
-    | 0, _ => Npos 1
-    | _, 0 => 0
-    | Npos p, Npos q => Npos (Ppow q p)
-  end.
-
-Infix "^" := Npow : N_scope.
-
-Lemma Npow_0_r : forall n, n ^ 0 = Npos 1.
+Lemma pow_0_r n : n ^ 0 = 1.
 Proof. reflexivity. Qed.
 
-Lemma Npow_succ_r : forall n p, n^(Nsucc p) = n * n^p.
+Lemma pow_succ_r n p : 0<=p -> n^(succ p) = n * n^p.
 Proof.
- intros [|q] [|p]; simpl; trivial; f_equal.
- apply Ppow_succ_r.
+ intros _.
+ destruct n, p; simpl; trivial; f_equal. apply Pos.pow_succ_r.
 Qed.
 
-(** Base-2 logarithm *)
-
-Definition Nlog2 n :=
- match n with
-   | 0 => 0
-   | Npos 1 => 0
-   | Npos (p~0) => Npos (Psize_pos p)
-   | Npos (p~1) => Npos (Psize_pos p)
- end.
-
-Lemma Nlog2_spec : forall n, 0 < n ->
- (Npos 2)^(Nlog2 n) <= n < (Npos 2)^(Nsucc (Nlog2 n)).
+Lemma pow_neg_r n p : p<0 -> n^p = 0.
 Proof.
- intros [|[p|p|]] H; discriminate H || clear H; simpl; split.
- eapply Nle_trans with (Npos (p~0)).
- apply Psize_pos_le.
- apply Nle_lteq; left. exact (Pcompare_p_Sp (p~0)).
- apply Psize_pos_gt.
- apply Psize_pos_le.
- apply Psize_pos_gt.
+ now destruct p.
+Qed.
+
+(** Specification of Base-2 logarithm *)
+
+Lemma size_log2 n : n<>0 -> size n = succ (log2 n).
+Proof.
+ destruct n as [|[n|n| ]]; trivial. now destruct 1.
+Qed.
+
+Lemma size_gt n : n < 2^(size n).
+Proof.
+ destruct n. reflexivity. simpl. apply Pos.size_gt.
+Qed.
+
+Lemma size_le n : 2^(size n) <= succ_double n.
+Proof.
+ destruct n. discriminate. simpl.
+ change (2^Pos.size p <= Pos.succ (p~0))%positive.
+ apply Pos.lt_le_incl, Pos.lt_succ_r, Pos.size_le.
+Qed.
+
+Lemma log2_spec n : 0 < n ->
+ 2^(log2 n) <= n < 2^(succ (log2 n)).
+Proof.
+ destruct n as [|[p|p|]]; discriminate || intros _; simpl; split.
+ apply (size_le (Npos p)).
+ apply Pos.size_gt.
+ apply Pos.size_le.
+ apply Pos.size_gt.
  discriminate.
  reflexivity.
 Qed.
 
-Lemma Nlog2_nonpos : forall n, n<=0 -> Nlog2 n = 0.
+Lemma log2_nonpos n : n<=0 -> log2 n = 0.
 Proof.
- intros [|n] Hn. reflexivity. now destruct Hn.
+ destruct n; intros Hn. reflexivity. now destruct Hn.
 Qed.
 
-(** Parity *)
+(** Specification of parity functions *)
 
-Definition Neven n :=
-  match n with
-    | 0 => true
-    | Npos (xO _) => true
-    | _ => false
-  end.
-Definition Nodd n := negb (Neven n).
-
-Lemma Neven_spec : forall n, Neven n = true <-> exists m, n=2*m.
+Lemma even_spec n : even n = true <-> Even n.
 Proof.
  destruct n.
  split. now exists 0.
  trivial.
- destruct p; simpl; split; trivial; try discriminate.
+ destruct p; simpl; split; try easy.
  intros (m,H). now destruct m.
  now exists (Npos p).
  intros (m,H). now destruct m.
 Qed.
 
-Lemma Nodd_spec : forall n, Nodd n = true <-> exists m, n=2*m+1.
+Lemma odd_spec n : odd n = true <-> Odd n.
 Proof.
  destruct n.
  split. discriminate.
  intros (m,H). now destruct m.
- destruct p; simpl; split; trivial; try discriminate.
- exists (Npos p). reflexivity.
+ destruct p; simpl; split; try easy.
+ now exists (Npos p).
  intros (m,H). now destruct m.
- exists 0. reflexivity.
+ now exists 0.
 Qed.
+
+(** Specification of the euclidean division *)
+
+Theorem pos_div_eucl_spec (a:positive)(b:N) :
+  let (q,r) := pos_div_eucl a b in Npos a = q * b + r.
+Proof.
+  induction a; cbv beta iota delta [pos_div_eucl]; fold pos_div_eucl; cbv zeta.
+  (* a~1 *)
+  destruct pos_div_eucl as (q,r).
+  change (Npos a~1) with (succ_double (Npos a)).
+  rewrite IHa, succ_double_add, double_mul.
+  case leb_spec; intros H; trivial.
+  rewrite succ_double_mul, <- add_assoc. f_equal.
+  now rewrite (add_comm b), sub_add.
+  (* a~0 *)
+  destruct pos_div_eucl as (q,r).
+  change (Npos a~0) with (double (Npos a)).
+  rewrite IHa, double_add, double_mul.
+  case leb_spec; intros H; trivial.
+  rewrite succ_double_mul, <- add_assoc. f_equal.
+  now rewrite (add_comm b), sub_add.
+  (* 1 *)
+  now destruct b as [|[ | | ]].
+Qed.
+
+Theorem div_eucl_spec a b :
+ let (q,r) := div_eucl a b in a = b * q + r.
+Proof.
+  destruct a as [|a], b as [|b]; unfold div_eucl; trivial.
+  generalize (pos_div_eucl_spec a (Npos b)).
+  destruct pos_div_eucl. now rewrite mul_comm.
+Qed.
+
+Theorem div_mod' a b : a = b * (a/b) + (a mod b).
+Proof.
+  generalize (div_eucl_spec a b).
+  unfold div, modulo. now destruct div_eucl.
+Qed.
+
+Definition div_mod a b : b<>0 -> a = b * (a/b) + (a mod b).
+Proof.
+ intros _. apply div_mod'.
+Qed.
+
+Theorem pos_div_eucl_remainder (a:positive) (b:N) :
+  b<>0 -> snd (pos_div_eucl a b) < b.
+Proof.
+  intros Hb.
+  induction a; cbv beta iota delta [pos_div_eucl]; fold pos_div_eucl; cbv zeta.
+  (* a~1 *)
+  destruct pos_div_eucl as (q,r); simpl in *.
+  case leb_spec; intros H; simpl; trivial.
+  apply add_lt_cancel_l with b. rewrite add_comm, sub_add by trivial.
+  destruct b as [|b]; [now destruct Hb| simpl; rewrite Pos.add_diag ].
+  apply (succ_double_lt _ _ IHa).
+  (* a~0 *)
+  destruct pos_div_eucl as (q,r); simpl in *.
+  case leb_spec; intros H; simpl; trivial.
+  apply add_lt_cancel_l with b. rewrite add_comm, sub_add by trivial.
+  destruct b as [|b]; [now destruct Hb| simpl; rewrite Pos.add_diag ].
+  now destruct r.
+  (* 1 *)
+  destruct b as [|[ | | ]]; easy || (now destruct Hb).
+Qed.
+
+Theorem mod_lt a b : b<>0 -> a mod b < b.
+Proof.
+  destruct b as [ |b]. now destruct 1.
+  destruct a as [ |a]. reflexivity.
+  unfold modulo. simpl. apply pos_div_eucl_remainder.
+Qed.
+
+Theorem mod_bound_pos a b : 0<=a -> 0<b -> 0 <= a mod b < b.
+Proof.
+ intros _ H. split. apply le_0_l. apply mod_lt. now destruct b.
+Qed.
+
+(** Specification of square root *)
+
+Lemma sqrtrem_sqrt n : fst (sqrtrem n) = sqrt n.
+Proof.
+ destruct n. reflexivity.
+ unfold sqrtrem, sqrt, Pos.sqrt.
+ destruct (Pos.sqrtrem p) as (s,r). now destruct r.
+Qed.
+
+Lemma sqrtrem_spec n :
+ let (s,r) := sqrtrem n in n = s*s + r /\ r <= 2*s.
+Proof.
+ destruct n. now split.
+ generalize (Pos.sqrtrem_spec p). simpl.
+ destruct 1; simpl; subst; now split.
+Qed.
+
+Lemma sqrt_spec n : 0<=n ->
+ let s := sqrt n in s*s <= n < (succ s)*(succ s).
+Proof.
+ intros _. destruct n. now split. apply (Pos.sqrt_spec p).
+Qed.
+
+Lemma sqrt_neg n : n<0 -> sqrt n = 0.
+Proof.
+ now destruct n.
+Qed.
+
+(** Specification of gcd *)
+
+(** The first component of ggcd is gcd *)
+
+Lemma ggcd_gcd a b : fst (ggcd a b) = gcd a b.
+Proof.
+ destruct a as [|p], b as [|q]; simpl; auto.
+ assert (H := Pos.ggcd_gcd p q).
+ destruct Pos.ggcd as (g,(aa,bb)); simpl; now f_equal.
+Qed.
+
+(** The other components of ggcd are indeed the correct factors. *)
+
+Lemma ggcd_correct_divisors a b :
+  let '(g,(aa,bb)) := ggcd a b in
+  a=g*aa /\ b=g*bb.
+Proof.
+ destruct a as [|p], b as [|q]; simpl; auto.
+ now rewrite Pos.mul_1_r.
+ now rewrite Pos.mul_1_r.
+ generalize (Pos.ggcd_correct_divisors p q).
+ destruct Pos.ggcd as (g,(aa,bb)); simpl.
+ destruct 1; split; now f_equal.
+Qed.
+
+(** We can use this fact to prove a part of the gcd correctness *)
+
+Lemma gcd_divide_l a b : (gcd a b | a).
+Proof.
+ rewrite <- ggcd_gcd. generalize (ggcd_correct_divisors a b).
+ destruct ggcd as (g,(aa,bb)); simpl. intros (H,_). exists aa; auto.
+Qed.
+
+Lemma gcd_divide_r a b : (gcd a b | b).
+Proof.
+ rewrite <- ggcd_gcd. generalize (ggcd_correct_divisors a b).
+ destruct ggcd as (g,(aa,bb)); simpl. intros (_,H). exists bb; auto.
+Qed.
+
+(** We now prove directly that gcd is the greatest amongst common divisors *)
+
+Lemma gcd_greatest a b c : (c|a) -> (c|b) -> (c|gcd a b).
+Proof.
+ destruct a as [ |p], b as [ |q]; simpl; trivial.
+ destruct c as [ |r]. intros (s,H). discriminate.
+ intros ([ |s],Hs) ([ |t],Ht); try discriminate; simpl in *.
+ destruct (Pos.gcd_greatest p q r) as (u,H).
+ exists s. now inversion Hs.
+ exists t. now inversion Ht.
+ exists (Npos u). simpl; now f_equal.
+Qed.
+
+Lemma gcd_nonneg a b : 0 <= gcd a b.
+Proof. apply le_0_l. Qed.
+
+(** Specification of bitwise functions *)
+
+(** Correctness proofs for [testbit]. *)
+
+Lemma testbit_even_0 a : testbit (2*a) 0 = false.
+Proof.
+ now destruct a.
+Qed.
+
+Lemma testbit_odd_0 a : testbit (2*a+1) 0 = true.
+Proof.
+ now destruct a.
+Qed.
+
+Lemma testbit_succ_r_div2 a n : 0<=n ->
+ testbit a (succ n) = testbit (div2 a) n.
+Proof.
+ intros _. destruct a as [|[a|a| ]], n as [|n]; simpl; trivial;
+  f_equal; apply Pos.pred_N_succ.
+Qed.
+
+Lemma testbit_odd_succ a n : 0<=n ->
+ testbit (2*a+1) (succ n) = testbit a n.
+Proof.
+ intros H. rewrite testbit_succ_r_div2 by trivial. f_equal. now destruct a.
+Qed.
+
+Lemma testbit_even_succ a n : 0<=n ->
+ testbit (2*a) (succ n) = testbit a n.
+Proof.
+ intros H. rewrite testbit_succ_r_div2 by trivial. f_equal. now destruct a.
+Qed.
+
+Lemma testbit_neg_r a n : n<0 -> testbit a n = false.
+Proof.
+ now destruct n.
+Qed.
+
+(** Correctness proofs for shifts *)
+
+Lemma shiftr_succ_r a n :
+ shiftr a (succ n) = div2 (shiftr a n).
+Proof.
+ destruct n; simpl; trivial. apply Pos.iter_succ.
+Qed.
+
+Lemma shiftl_succ_r a n :
+ shiftl a (succ n) = double (shiftl a n).
+Proof.
+ destruct n, a; simpl; trivial. f_equal. apply Pos.iter_succ.
+Qed.
+
+Lemma shiftr_spec a n m : 0<=m ->
+ testbit (shiftr a n) m = testbit a (m+n).
+Proof.
+ intros _. revert a m.
+ induction n using peano_ind; intros a m. now rewrite add_0_r.
+ rewrite add_comm, add_succ_l, add_comm, <- add_succ_l.
+ now rewrite <- IHn, testbit_succ_r_div2, shiftr_succ_r by apply le_0_l.
+Qed.
+
+Lemma shiftl_spec_high a n m : 0<=m -> n<=m ->
+ testbit (shiftl a n) m = testbit a (m-n).
+Proof.
+ intros _ H.
+ rewrite <- (sub_add n m H) at 1.
+ set (m' := m-n). clearbody m'. clear H m. revert a m'.
+ induction n using peano_ind; intros a m.
+ rewrite add_0_r; now destruct a.
+ rewrite shiftl_succ_r.
+ rewrite add_comm, add_succ_l, add_comm.
+ now rewrite testbit_succ_r_div2, div2_double by apply le_0_l.
+Qed.
+
+Lemma shiftl_spec_low a n m : m<n ->
+ testbit (shiftl a n) m = false.
+Proof.
+ revert a m.
+ induction n using peano_ind; intros a m H.
+ elim (le_0_l m). now rewrite <- compare_antisym, H.
+ rewrite shiftl_succ_r.
+ destruct m. now destruct (shiftl a n).
+ rewrite <- (succ_pos_pred p), testbit_succ_r_div2, div2_double by apply le_0_l.
+ apply IHn.
+ apply add_lt_cancel_l with 1. rewrite 2 (add_succ_l 0). simpl.
+ now rewrite succ_pos_pred.
+Qed.
+
+Definition div2_spec a : div2 a = shiftr a 1.
+Proof.
+ reflexivity.
+Qed.
+
+(** Semantics of bitwise operations *)
+
+Lemma pos_lxor_spec p p' n :
+ testbit (Pos.lxor p p') n = xorb (Pos.testbit p n) (Pos.testbit p' n).
+Proof.
+ revert p' n.
+ induction p as [p IH|p IH|]; intros [p'|p'|] [|n]; trivial; simpl;
+ (specialize (IH p'); destruct Pos.lxor; trivial; now rewrite <-IH) ||
+ (now destruct Pos.testbit).
+Qed.
+
+Lemma lxor_spec a a' n :
+ testbit (lxor a a') n = xorb (testbit a n) (testbit a' n).
+Proof.
+ destruct a, a'; simpl; trivial.
+ now destruct Pos.testbit.
+ now destruct Pos.testbit.
+ apply pos_lxor_spec.
+Qed.
+
+Lemma pos_lor_spec p p' n :
+ Pos.testbit (Pos.lor p p') n = (Pos.testbit p n) || (Pos.testbit p' n).
+Proof.
+ revert p' n.
+ induction p as [p IH|p IH|]; intros [p'|p'|] [|n]; trivial; simpl;
+  apply IH || now rewrite orb_false_r.
+Qed.
+
+Lemma lor_spec a a' n :
+ testbit (lor a a') n = (testbit a n) || (testbit a' n).
+Proof.
+ destruct a, a'; simpl; trivial.
+ now rewrite orb_false_r.
+ apply pos_lor_spec.
+Qed.
+
+Lemma pos_land_spec p p' n :
+ testbit (Pos.land p p') n = (Pos.testbit p n) && (Pos.testbit p' n).
+Proof.
+ revert p' n.
+ induction p as [p IH|p IH|]; intros [p'|p'|] [|n]; trivial; simpl;
+ (specialize (IH p'); destruct Pos.land; trivial; now rewrite <-IH) ||
+ (now rewrite andb_false_r).
+Qed.
+
+Lemma land_spec a a' n :
+ testbit (land a a') n = (testbit a n) && (testbit a' n).
+Proof.
+ destruct a, a'; simpl; trivial.
+ now rewrite andb_false_r.
+ apply pos_land_spec.
+Qed.
+
+Lemma pos_ldiff_spec p p' n :
+ testbit (Pos.ldiff p p') n = (Pos.testbit p n) && negb (Pos.testbit p' n).
+Proof.
+ revert p' n.
+ induction p as [p IH|p IH|]; intros [p'|p'|] [|n]; trivial; simpl;
+ (specialize (IH p'); destruct Pos.ldiff; trivial; now rewrite <-IH) ||
+ (now rewrite andb_true_r).
+Qed.
+
+Lemma ldiff_spec a a' n :
+ testbit (ldiff a a') n = (testbit a n) && negb (testbit a' n).
+Proof.
+ destruct a, a'; simpl; trivial.
+ now rewrite andb_true_r.
+ apply pos_ldiff_spec.
+Qed.
+
+(** Specification of constants *)
+
+Lemma one_succ : 1 = succ 0.
+Proof. reflexivity. Qed.
+
+Lemma two_succ : 2 = succ 1.
+Proof. reflexivity. Qed.
+
+Definition pred_0 : pred 0 = 0.
+Proof. reflexivity. Qed.
+
+(** Proofs of morphisms, obvious since eq is Leibniz *)
+
+Local Obligation Tactic := simpl_relation.
+Program Definition succ_wd : Proper (eq==>eq) succ := _.
+Program Definition pred_wd : Proper (eq==>eq) pred := _.
+Program Definition add_wd : Proper (eq==>eq==>eq) add := _.
+Program Definition sub_wd : Proper (eq==>eq==>eq) sub := _.
+Program Definition mul_wd : Proper (eq==>eq==>eq) mul := _.
+Program Definition lt_wd : Proper (eq==>eq==>iff) lt := _.
+Program Definition div_wd : Proper (eq==>eq==>eq) div := _.
+Program Definition mod_wd : Proper (eq==>eq==>eq) modulo := _.
+Program Definition pow_wd : Proper (eq==>eq==>eq) pow := _.
+Program Definition testbit_wd : Proper (eq==>eq==>Logic.eq) testbit := _.
+
+(** Generic induction / recursion *)
+
+Theorem bi_induction :
+  forall A : N -> Prop, Proper (Logic.eq==>iff) A ->
+    A N0 -> (forall n, A n <-> A (succ n)) -> forall n : N, A n.
+Proof.
+intros A A_wd A0 AS. apply peano_rect. assumption. intros; now apply -> AS.
+Qed.
+
+Definition recursion {A} : A -> (N -> A -> A) -> N -> A :=
+  peano_rect (fun _ => A).
+
+Instance recursion_wd {A} (Aeq : relation A) :
+ Proper (Aeq==>(Logic.eq==>Aeq==>Aeq)==>Logic.eq==>Aeq) recursion.
+Proof.
+intros a a' Ea f f' Ef x x' Ex. subst x'.
+induction x using peano_ind.
+trivial.
+unfold recursion in *. rewrite 2 peano_rect_succ. now apply Ef.
+Qed.
+
+Theorem recursion_0 {A} (a:A) (f:N->A->A) : recursion a f 0 = a.
+Proof. reflexivity. Qed.
+
+Theorem recursion_succ {A} (Aeq : relation A) (a : A) (f : N -> A -> A):
+ Aeq a a -> Proper (Logic.eq==>Aeq==>Aeq) f ->
+  forall n : N, Aeq (recursion a f (succ n)) (f n (recursion a f n)).
+Proof.
+unfold recursion; intros a_wd f_wd n. induction n using peano_ind.
+rewrite peano_rect_succ. now apply f_wd.
+rewrite !peano_rect_succ in *. now apply f_wd.
+Qed.
+
+(** Instantiation of generic properties of natural numbers *)
+
+Set Inline Level 30. (* For inlining only t eq zero one two *)
+
+Include NProp
+ <+ UsualMinMaxLogicalProperties <+ UsualMinMaxDecProperties.
+
+(** Otherwise N stays associated with abstract_scope : (TODO FIX) *)
+Bind Scope N_scope with N.
+
+(** In generic statements, the predicates [lt] and [le] have been
+  favored, whereas [gt] and [ge] don't even exist in the abstract
+  layers. The use of [gt] and [ge] is hence not recommended. We provide
+  here the bare minimal results to related them with [lt] and [le]. *)
+
+Lemma gt_lt n m : n > m -> m < n.
+Proof.
+  unfold lt, gt. intros H. now rewrite <- compare_antisym, H.
+Qed.
+
+Lemma lt_gt n m : n < m -> m > n.
+Proof.
+  unfold lt, gt. intros H. now rewrite <- compare_antisym, H.
+Qed.
+
+Lemma gt_lt_iff n m : n > m <-> m < n.
+Proof.
+  split. apply gt_lt. apply lt_gt.
+Qed.
+
+Lemma ge_le n m : n >= m -> m <= n.
+Proof.
+  unfold le, ge. intros H. contradict H. now apply gt_lt.
+Qed.
+
+Lemma le_ge n m : n <= m -> m >= n.
+Proof.
+  unfold le, ge. intros H. contradict H. now apply lt_gt.
+Qed.
+
+Lemma ge_le_iff n m : n >= m <-> m <= n.
+Proof.
+  split. apply ge_le. apply le_ge.
+Qed.
+
+(** Auxiliary results about right shift on positive numbers,
+    used in BinInt *)
+
+Lemma pos_pred_shiftl_low : forall p n m, m<n ->
+ testbit (Pos.pred_N (Pos.shiftl p n)) m = true.
+Proof.
+ induction n using peano_ind.
+ now destruct m.
+ intros m H. unfold Pos.shiftl.
+ destruct n as [|n]; simpl in *.
+ destruct m. now destruct p. elim (Pos.nlt_1_r _ H).
+ rewrite Pos.iter_succ. simpl.
+ set (u:=Pos.iter n xO p) in *; clearbody u.
+ destruct m as [|m]. now destruct u.
+ rewrite <- (IHn (Pos.pred_N m)).
+ rewrite <- (testbit_odd_succ _ (Pos.pred_N m)).
+ rewrite succ_pos_pred. now destruct u.
+ apply le_0_l.
+ apply succ_lt_mono. now rewrite succ_pos_pred.
+Qed.
+
+Lemma pos_pred_shiftl_high : forall p n m, n<=m ->
+ testbit (Pos.pred_N (Pos.shiftl p n)) m =
+ testbit (shiftl (Pos.pred_N p) n) m.
+Proof.
+ induction n using peano_ind; intros m H.
+ unfold shiftl. simpl. now destruct (Pos.pred_N p).
+ rewrite shiftl_succ_r.
+ destruct n as [|n].
+ destruct m as [|m]. now destruct H. now destruct p.
+ destruct m as [|m]. now destruct H.
+ rewrite <- (succ_pos_pred m).
+ rewrite double_spec, testbit_even_succ by apply le_0_l.
+ rewrite <- IHn.
+ rewrite testbit_succ_r_div2 by apply le_0_l.
+ f_equal. simpl. rewrite Pos.iter_succ.
+ now destruct (Pos.iter n xO p).
+ apply succ_le_mono. now rewrite succ_pos_pred.
+Qed.
+
+Lemma pred_div2_up p : Pos.pred_N (Pos.div2_up p) = div2 (Pos.pred_N p).
+Proof.
+ destruct p as [p|p| ]; trivial.
+ simpl. apply Pos.pred_N_succ.
+ destruct p; simpl; trivial.
+Qed.
+
+End N.
+
+(** Exportation of notations *)
+
+Infix "+" := N.add : N_scope.
+Infix "-" := N.sub : N_scope.
+Infix "*" := N.mul : N_scope.
+Infix "^" := N.pow : N_scope.
+
+Infix "?=" := N.compare (at level 70, no associativity) : N_scope.
+
+Infix "<=" := N.le : N_scope.
+Infix "<" := N.lt : N_scope.
+Infix ">=" := N.ge : N_scope.
+Infix ">" := N.gt : N_scope.
+
+Notation "x <= y <= z" := (x <= y /\ y <= z) : N_scope.
+Notation "x <= y < z" := (x <= y /\ y < z) : N_scope.
+Notation "x < y < z" := (x < y /\ y < z) : N_scope.
+Notation "x < y <= z" := (x < y /\ y <= z) : N_scope.
+
+Infix "=?" := N.eqb (at level 70, no associativity) : N_scope.
+Infix "<=?" := N.leb (at level 70, no associativity) : N_scope.
+Infix "<?" := N.ltb (at level 70, no associativity) : N_scope.
+
+Infix "/" := N.div : N_scope.
+Infix "mod" := N.modulo (at level 40, no associativity) : N_scope.
+
+Notation "( p | q )" := (N.divide p q) (at level 0) : N_scope.
+
+(** Compatibility notations *)
+
+(*Notation N := N (only parsing).*) (*hidden by module N above *)
+Notation N_rect := N_rect (only parsing).
+Notation N_rec := N_rec (only parsing).
+Notation N_ind := N_ind (only parsing).
+Notation N0 := N0 (only parsing).
+Notation Npos := Npos (only parsing).
+
+Notation Ndiscr := N.discr (only parsing).
+Notation Ndouble_plus_one := N.succ_double.
+Notation Ndouble := N.double (only parsing).
+Notation Nsucc := N.succ (only parsing).
+Notation Npred := N.pred (only parsing).
+Notation Nsucc_pos := N.succ_pos (only parsing).
+Notation Ppred_N := Pos.pred_N (only parsing).
+Notation Nplus := N.add (only parsing).
+Notation Nminus := N.sub (only parsing).
+Notation Nmult := N.mul (only parsing).
+Notation Neqb := N.eqb (only parsing).
+Notation Ncompare := N.compare (only parsing).
+Notation Nlt := N.lt (only parsing).
+Notation Ngt := N.gt (only parsing).
+Notation Nle := N.le (only parsing).
+Notation Nge := N.ge (only parsing).
+Notation Nmin := N.min (only parsing).
+Notation Nmax := N.max (only parsing).
+Notation Ndiv2 := N.div2 (only parsing).
+Notation Neven := N.even (only parsing).
+Notation Nodd := N.odd (only parsing).
+Notation Npow := N.pow (only parsing).
+Notation Nlog2 := N.log2 (only parsing).
+
+Notation nat_of_N := N.to_nat (only parsing).
+Notation N_of_nat := N.of_nat (only parsing).
+Notation N_eq_dec := N.eq_dec (only parsing).
+Notation Nrect := N.peano_rect (only parsing).
+Notation Nrect_base := N.peano_rect_base (only parsing).
+Notation Nrect_step := N.peano_rect_succ (only parsing).
+Notation Nind := N.peano_ind (only parsing).
+Notation Nrec := N.peano_rec (only parsing).
+Notation Nrec_base := N.peano_rec_base (only parsing).
+Notation Nrec_succ := N.peano_rec_succ (only parsing).
+
+Notation Npred_succ := N.pred_succ (only parsing).
+Notation Npred_minus := N.pred_sub (only parsing).
+Notation Nsucc_pred := N.succ_pred (only parsing).
+Notation Ppred_N_spec := N.pos_pred_spec (only parsing).
+Notation Nsucc_pos_spec := N.succ_pos_spec (only parsing).
+Notation Ppred_Nsucc := N.pos_pred_succ (only parsing).
+Notation Nplus_0_l := N.add_0_l (only parsing).
+Notation Nplus_0_r := N.add_0_r (only parsing).
+Notation Nplus_comm := N.add_comm (only parsing).
+Notation Nplus_assoc := N.add_assoc (only parsing).
+Notation Nplus_succ := N.add_succ_l (only parsing).
+Notation Nsucc_0 := N.succ_0_discr (only parsing).
+Notation Nsucc_inj := N.succ_inj (only parsing).
+Notation Nminus_N0_Nle := N.sub_0_le (only parsing).
+Notation Nminus_0_r := N.sub_0_r (only parsing).
+Notation Nminus_succ_r:= N.sub_succ_r (only parsing).
+Notation Nmult_0_l := N.mul_0_l (only parsing).
+Notation Nmult_1_l := N.mul_1_l (only parsing).
+Notation Nmult_1_r := N.mul_1_r (only parsing).
+Notation Nmult_comm := N.mul_comm (only parsing).
+Notation Nmult_assoc := N.mul_assoc (only parsing).
+Notation Nmult_plus_distr_r := N.mul_add_distr_r (only parsing).
+Notation Neqb_eq := N.eqb_eq (only parsing).
+Notation Nle_0 := N.le_0_l (only parsing).
+Notation Ncompare_refl := N.compare_refl (only parsing).
+Notation Ncompare_Eq_eq := N.compare_eq (only parsing).
+Notation Ncompare_eq_correct := N.compare_eq_iff (only parsing).
+Notation Ncompare_antisym := N.compare_antisym (only parsing).
+Notation Nlt_irrefl := N.lt_irrefl (only parsing).
+Notation Nlt_trans := N.lt_trans (only parsing).
+Notation Nle_lteq := N.lt_eq_cases (only parsing).
+Notation Nlt_succ_r := N.lt_succ_r (only parsing).
+Notation Nle_trans := N.le_trans (only parsing).
+Notation Nle_succ_l := N.le_succ_l (only parsing).
+Notation Ncompare_spec := N.compare_spec (only parsing).
+Notation Ncompare_0 := N.compare_0_r (only parsing).
+Notation Ndouble_div2 := N.div2_double (only parsing).
+Notation Ndouble_plus_one_div2 := N.div2_succ_double (only parsing).
+Notation Ndouble_inj := N.double_inj (only parsing).
+Notation Ndouble_plus_one_inj := N.succ_double_inj (only parsing).
+Notation Npow_0_r := N.pow_0_r (only parsing).
+Notation Npow_succ_r := N.pow_succ_r (only parsing).
+Notation Nlog2_spec := N.log2_spec (only parsing).
+Notation Nlog2_nonpos := N.log2_nonpos (only parsing).
+Notation Neven_spec := N.even_spec (only parsing).
+Notation Nodd_spec := N.odd_spec (only parsing).
+Notation Nlt_not_eq := N.lt_neq (only parsing).
+Notation Ngt_Nlt := N.gt_lt (only parsing).
+
+(** More complex compatibility facts, expressed as lemmas
+    (to preserve scopes for instance) *)
+
+Lemma Nplus_reg_l n m p : n + m = n + p -> m = p.
+Proof (proj1 (N.add_cancel_l m p n)).
+Lemma Nmult_Sn_m n m : N.succ n * m = m + n * m.
+Proof (eq_trans (N.mul_succ_l n m) (N.add_comm _ _)).
+Lemma Nmult_plus_distr_l n m p : p * (n + m) = p * n + p * m.
+Proof (N.mul_add_distr_l p n m).
+Lemma Nmult_reg_r n m p : p <> 0 -> n * p = m * p -> n = m.
+Proof (fun H => proj1 (N.mul_cancel_r n m p H)).
+
+Definition N_ind_double a P f0 f2 fS2 := N.binary_ind P f0 f2 fS2 a.
+Definition N_rec_double a P f0 f2 fS2 := N.binary_rec P f0 f2 fS2 a.
+
+(** Not kept : Ncompare_n_Sm Nplus_lt_cancel_l *)

@@ -15,21 +15,27 @@ type result =
  | Kimp of Term.constr * Term.constr
  | Kufo;;
 
+let meaningful_submodule = [ "Z"; "N"; "Pos" ]
+
+let string_of_global r =
+  let dp = Nametab.dirpath_of_global r in
+  let prefix = match Names.repr_dirpath dp with
+    | [] -> ""
+    | m::_ ->
+      let s = Names.string_of_id m in
+      if List.mem s meaningful_submodule then s^"." else ""
+  in
+  prefix^(Names.string_of_id (Nametab.basename_of_global r))
+
 let destructurate t =
   let c, args = Term.decompose_app t in
   match Term.kind_of_term c, args with
     | Term.Const sp, args ->
-	Kapp (Names.string_of_id
-		(Nametab.basename_of_global (Libnames.ConstRef sp)),
-	      args)
+	Kapp (string_of_global (Libnames.ConstRef sp), args)
     | Term.Construct csp , args ->
-	Kapp (Names.string_of_id
-		(Nametab.basename_of_global (Libnames.ConstructRef csp)),
-	      args)
+	Kapp (string_of_global (Libnames.ConstructRef csp), args)
     | Term.Ind isp, args ->
-	Kapp (Names.string_of_id
-		(Nametab.basename_of_global (Libnames.IndRef isp)),
-	      args)
+	Kapp (string_of_global (Libnames.IndRef isp), args)
     | Term.Var id,[] -> Kvar(Names.string_of_id id)
     | Term.Prod (Names.Anonymous,typ,body), [] -> Kimp(typ,body)
     | Term.Prod (Names.Name _,_,_),[] ->
@@ -56,9 +62,13 @@ let coq_modules =
     @ [module_refl_path]
     @ [module_refl_path@["ZOmega"]]
 
+let bin_module = [["Coq";"Numbers";"BinNums"]]
+let z_module = [["Coq";"ZArith";"BinInt"]]
 
 let init_constant = Coqlib.gen_constant_in_modules "Omega" Coqlib.init_modules
 let constant = Coqlib.gen_constant_in_modules "Omega" coq_modules
+let z_constant = Coqlib.gen_constant_in_modules "Omega" z_module
+let bin_constant = Coqlib.gen_constant_in_modules "Omega" bin_module
 
 (* Logic *)
 let coq_eq = lazy(init_constant  "eq")
@@ -271,18 +281,18 @@ end
 
 module Z : Int = struct
 
-let typ = lazy (constant "Z")
-let plus = lazy (constant "Zplus")
-let mult = lazy (constant  "Zmult")
-let opp = lazy (constant "Zopp")
-let minus = lazy (constant "Zminus")
+let typ = lazy (bin_constant "Z")
+let plus = lazy (z_constant "Z.add")
+let mult = lazy (z_constant  "Z.mul")
+let opp = lazy (z_constant "Z.opp")
+let minus = lazy (z_constant "Z.sub")
 
-let coq_xH = lazy (constant "xH")
-let coq_xO = lazy (constant "xO")
-let coq_xI = lazy (constant "xI")
-let coq_Z0 = lazy (constant "Z0")
-let coq_Zpos = lazy (constant "Zpos")
-let coq_Zneg = lazy (constant "Zneg")
+let coq_xH = lazy (bin_constant "xH")
+let coq_xO = lazy (bin_constant "xO")
+let coq_xI = lazy (bin_constant "xI")
+let coq_Z0 = lazy (bin_constant "Z0")
+let coq_Zpos = lazy (bin_constant "Zpos")
+let coq_Zneg = lazy (bin_constant "Zneg")
 
 let recognize t =
   let rec loop t =
@@ -318,12 +328,12 @@ let mk = mk_Z
 
 let parse_term t =
   try match destructurate t with
-    | Kapp("Zplus",[t1;t2]) -> Tplus (t1,t2)
-    | Kapp("Zminus",[t1;t2]) -> Tminus (t1,t2)
-    | Kapp("Zmult",[t1;t2]) -> Tmult (t1,t2)
-    | Kapp("Zopp",[t]) -> Topp t
-    | Kapp("Zsucc",[t]) -> Tsucc t
-    | Kapp("Zpred",[t]) -> Tplus(t, mk_Z (Bigint.neg Bigint.one))
+    | Kapp("Z.add",[t1;t2]) -> Tplus (t1,t2)
+    | Kapp("Z.sub",[t1;t2]) -> Tminus (t1,t2)
+    | Kapp("Z.mul",[t1;t2]) -> Tmult (t1,t2)
+    | Kapp("Z.opp",[t]) -> Topp t
+    | Kapp("Z.succ",[t]) -> Tsucc t
+    | Kapp("Z.pred",[t]) -> Tplus(t, mk_Z (Bigint.neg Bigint.one))
     | Kapp(("Zpos"|"Zneg"|"Z0"),_) ->
 	(try Tnum (recognize t) with _ -> Tother)
     | _ -> Tother
@@ -334,17 +344,17 @@ let parse_rel gl t =
     | Kapp("eq",[typ;t1;t2])
       when destructurate (Tacmach.pf_nf gl typ) = Kapp("Z",[]) -> Req (t1,t2)
     | Kapp("Zne",[t1;t2]) -> Rne (t1,t2)
-    | Kapp("Zle",[t1;t2]) -> Rle (t1,t2)
-    | Kapp("Zlt",[t1;t2]) -> Rlt (t1,t2)
-    | Kapp("Zge",[t1;t2]) -> Rge (t1,t2)
-    | Kapp("Zgt",[t1;t2]) -> Rgt (t1,t2)
+    | Kapp("Z.le",[t1;t2]) -> Rle (t1,t2)
+    | Kapp("Z.lt",[t1;t2]) -> Rlt (t1,t2)
+    | Kapp("Z.ge",[t1;t2]) -> Rge (t1,t2)
+    | Kapp("Z.gt",[t1;t2]) -> Rgt (t1,t2)
     | _ -> parse_logic_rel t
   with e when Logic.catchable_exception e -> Rother
 
 let is_scalar t =
   let rec aux t = match destructurate t with
-    | Kapp(("Zplus"|"Zminus"|"Zmult"),[t1;t2]) -> aux t1 & aux t2
-    | Kapp(("Zopp"|"Zsucc"|"Zpred"),[t]) -> aux t
+    | Kapp(("Z.add"|"Z.sub"|"Z.mul"),[t1;t2]) -> aux t1 & aux t2
+    | Kapp(("Z.opp"|"Z.succ"|"Z.pred"),[t]) -> aux t
     | Kapp(("Zpos"|"Zneg"|"Z0"),_) -> let _ = recognize t in true
     | _ -> false in
   try aux t with _ -> false

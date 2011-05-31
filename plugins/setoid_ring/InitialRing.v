@@ -13,7 +13,7 @@ Require Import BinNat.
 Require Import Setoid.
 Require Import Ring_theory.
 Require Import Ring_polynom.
-Require Import Ndiv_def Zdiv_def.
+Require Import Zdiv_def.
 Import List.
 
 Set Implicit Arguments.
@@ -170,48 +170,28 @@ Section ZMORPHISM.
   rewrite H1;rrefl.
  Qed.
 
- Lemma gen_phiZ1_add_pos_neg : forall x y,
- gen_phiZ1
-    match (x ?= y)%positive Eq with
-    | Eq => Z0
-    | Lt => Zneg (y - x)
-    | Gt => Zpos (x - y)
-    end
- == gen_phiPOS1 x + -gen_phiPOS1 y.
+ Lemma gen_phiZ1_pos_sub : forall x y,
+ gen_phiZ1 (Z.pos_sub x y) == gen_phiPOS1 x + -gen_phiPOS1 y.
  Proof.
   intros x y.
-  assert (H:= (Pcompare_Eq_eq x y)); assert (H0 := Pminus_mask_Gt x y).
-  generalize (Pminus_mask_Gt y x).
-  replace Eq with (CompOpp Eq);[intro H1;simpl|trivial].
-  rewrite <- Pcompare_antisym in H1.
-  destruct ((x ?= y)%positive Eq).
-  rewrite H;trivial. rewrite (Ropp_def Rth);rrefl.
-  destruct H1 as [h [Heq1 [Heq2 Hor]]];trivial.
-  unfold Pminus; rewrite Heq1;rewrite <- Heq2.
+  rewrite Z.pos_sub_spec.
+  case Pos.compare_spec; intros H; simpl.
+  rewrite H. rewrite (Ropp_def Rth);rrefl.
+  rewrite <- (Pos.sub_add y x H) at 2. rewrite Pos.add_comm.
   rewrite (ARgen_phiPOS_add ARth);simpl;norm.
   rewrite (Ropp_def Rth);norm.
-  destruct H0 as [h [Heq1 [Heq2 Hor]]];trivial.
-  unfold Pminus; rewrite Heq1;rewrite <- Heq2.
+  rewrite <- (Pos.sub_add x y H) at 2.
   rewrite (ARgen_phiPOS_add ARth);simpl;norm.
-  add_push (gen_phiPOS1 h);rewrite (Ropp_def Rth); norm.
+  add_push (gen_phiPOS1 (x-y));rewrite (Ropp_def Rth); norm.
  Qed.
-
- Lemma match_compOpp : forall x (B:Type) (be bl bg:B),
-  match CompOpp x with Eq => be | Lt => bl | Gt => bg end
-  = match x with Eq => be | Lt => bg | Gt => bl end.
- Proof. destruct x;simpl;intros;trivial. Qed.
 
  Lemma gen_phiZ_add : forall x y, [x + y] == [x] + [y].
  Proof.
   intros x y; repeat rewrite same_genZ; generalize x y;clear x y.
-  induction x;destruct y;simpl;norm.
+  destruct x, y; simpl; norm.
   apply (ARgen_phiPOS_add ARth).
-  apply gen_phiZ1_add_pos_neg.
-  replace Eq with (CompOpp Eq);trivial.
-  rewrite <- Pcompare_antisym;simpl.
-  rewrite match_compOpp.
-  rewrite (Radd_comm Rth).
-  apply gen_phiZ1_add_pos_neg.
+  apply gen_phiZ1_pos_sub.
+  rewrite gen_phiZ1_pos_sub. apply (Radd_comm Rth).
   rewrite (ARgen_phiPOS_add ARth); norm.
  Qed.
 
@@ -244,47 +224,28 @@ End ZMORPHISM.
 Lemma Nsth : Setoid_Theory N (@eq N).
 Proof (Eqsth N).
 
-Lemma Nseqe : sring_eq_ext Nplus Nmult (@eq N).
-Proof (Eq_s_ext Nplus Nmult).
+Lemma Nseqe : sring_eq_ext N.add N.mul (@eq N).
+Proof (Eq_s_ext N.add N.mul).
 
-Lemma Nth : semi_ring_theory N0 (Npos xH) Nplus Nmult (@eq N).
+Lemma Nth : semi_ring_theory 0%N 1%N N.add N.mul (@eq N).
 Proof.
- constructor. exact Nplus_0_l. exact Nplus_comm. exact Nplus_assoc.
- exact Nmult_1_l. exact Nmult_0_l. exact Nmult_comm. exact Nmult_assoc.
- exact Nmult_plus_distr_r.
+ constructor. exact N.add_0_l. exact N.add_comm. exact N.add_assoc.
+ exact N.mul_1_l. exact N.mul_0_l. exact N.mul_comm. exact N.mul_assoc.
+ exact N.mul_add_distr_r.
 Qed.
 
-Definition Nsub := SRsub Nplus.
+Definition Nsub := SRsub N.add.
 Definition Nopp := (@SRopp N).
 
-Lemma Neqe : ring_eq_ext Nplus Nmult Nopp (@eq N).
+Lemma Neqe : ring_eq_ext N.add N.mul Nopp (@eq N).
 Proof (SReqe_Reqe Nseqe).
 
 Lemma Nath :
- almost_ring_theory N0 (Npos xH) Nplus Nmult Nsub Nopp (@eq N).
+ almost_ring_theory 0%N 1%N N.add N.mul Nsub Nopp (@eq N).
 Proof (SRth_ARth Nsth Nth).
 
-Definition Neq_bool (x y:N) :=
-  match Ncompare x y with
-  | Eq => true
-  | _ => false
-  end.
-
-Lemma Neq_bool_ok : forall x y, Neq_bool x y = true -> x = y.
- Proof.
-  intros x y;unfold Neq_bool.
-  assert (H:=Ncompare_Eq_eq x y);
-   destruct (Ncompare x y);intros;try discriminate.
-  rewrite H;trivial.
- Qed.
-
-Lemma Neq_bool_complete : forall x y, Neq_bool x y = true -> x = y.
- Proof.
-  intros x y;unfold Neq_bool.
-  assert (H:=Ncompare_Eq_eq x y);
-   destruct (Ncompare x y);intros;try discriminate.
-  rewrite H;trivial.
- Qed.
+Lemma Neqb_ok : forall x y, N.eqb x y = true -> x = y.
+Proof. exact (fun x y => proj1 (N.eqb_eq x y)). Qed.
 
 (**Same as above : definition of two,extensionaly equal, generic morphisms *)
 (**from N to any semi-ring*)
@@ -324,8 +285,8 @@ Section NMORPHISM.
 
  Lemma same_genN : forall x, [x] == gen_phiN1 x.
  Proof.
-  destruct x;simpl. rrefl.
-  rewrite (same_gen Rsth Reqe ARth);rrefl.
+  destruct x;simpl. reflexivity.
+  now rewrite (same_gen Rsth Reqe ARth).
  Qed.
 
  Lemma gen_phiN_add : forall x y, [x + y] == [x] + [y].
@@ -347,11 +308,11 @@ Section NMORPHISM.
 
 (*gen_phiN satisfies morphism specifications*)
  Lemma gen_phiN_morph : ring_morph 0 1 radd rmul rsub ropp req
-                           N0 (Npos xH) Nplus Nmult Nsub Nopp Neq_bool gen_phiN.
+                           0%N 1%N N.add N.mul Nsub Nopp N.eqb gen_phiN.
  Proof.
-  constructor;intros;simpl; try rrefl.
-  apply gen_phiN_add. apply gen_phiN_sub.  apply gen_phiN_mult.
-  rewrite (Neq_bool_ok x y);trivial. rrefl.
+  constructor; simpl; try reflexivity.
+  apply gen_phiN_add. apply gen_phiN_sub. apply gen_phiN_mult.
+  intros x y EQ. apply N.eqb_eq in EQ. now subst.
  Qed.
 
 End NMORPHISM.
@@ -400,7 +361,7 @@ Fixpoint Nw_is0 (w : Nword) : bool :=
 Fixpoint Nweq_bool (w1 w2 : Nword) {struct w1} : bool :=
   match w1, w2 with
   | n1::w1', n2::w2' =>
-     if Neq_bool n1 n2 then Nweq_bool w1' w2' else false
+     if N.eqb n1 n2 then Nweq_bool w1' w2' else false
   | nil, _ => Nw_is0 w2
   | _, nil => Nw_is0 w1
   end.
@@ -484,10 +445,10 @@ induction w1; intros.
 
   simpl in H.
   rewrite gen_phiNword_cons in |- *.
-  case_eq (Neq_bool a n); intros.
+  case_eq (N.eqb a n); intros H0.
    rewrite H0 in H.
-   rewrite <- (Neq_bool_ok _ _ H0) in |- *.
-   rewrite (IHw1 _ H) in |- *.
+   apply N.eqb_eq in H0. rewrite <- H0.
+   rewrite (IHw1 _ H).
    reflexivity.
 
    rewrite H0 in H;  discriminate H.
@@ -639,10 +600,10 @@ Qed.
 
  Variable nphi : N -> R.
 
- Lemma Ntriv_div_th : div_theory req Nplus Nmult nphi Ndiv_eucl.
+ Lemma Ntriv_div_th : div_theory req N.add N.mul nphi N.div_eucl.
   constructor.
-  intros; generalize (Ndiv_eucl_correct a b); case Ndiv_eucl; intros; subst.
-  rewrite Nmult_comm; rsimpl.
+  intros; generalize (N.div_eucl_spec a b); case N.div_eucl; intros; subst.
+  rewrite N.mul_comm; rsimpl.
  Qed.
 
 End GEN_DIV.

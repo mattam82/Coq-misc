@@ -6,9 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-Require Import BinPos BinNat Nnat ZArith_base ROmega ZArithRing Morphisms Zdiv.
-Require Export Ndiv_def Zdiv_def.
-Require ZBinary ZDivTrunc.
+Require Import Nnat ZArith_base ROmega ZArithRing Zdiv_def Zdiv Morphisms.
 
 Local Open Scope Z_scope.
 
@@ -31,7 +29,7 @@ Lemma Ndiv_Zquot : forall a b:N,
 Proof.
   intros.
   destruct a; destruct b; simpl; auto.
-  unfold Ndiv, Zquot; simpl; destruct Pdiv_eucl; auto.
+  unfold N.div, Zquot; simpl. destruct N.pos_div_eucl; auto.
 Qed.
 
 Lemma Nmod_Zrem : forall a b:N,
@@ -39,7 +37,7 @@ Lemma Nmod_Zrem : forall a b:N,
 Proof.
   intros.
   destruct a; destruct b; simpl; auto.
-  unfold Nmod, Zrem; simpl; destruct Pdiv_eucl; auto.
+  unfold N.modulo, Zrem; simpl; destruct N.pos_div_eucl; auto.
 Qed.
 
 (** * Characterization of this euclidean division. *)
@@ -56,11 +54,7 @@ Notation Z_quot_rem_eq := Z_quot_rem_eq (only parsing).
 Theorem Zrem_lt : forall a b:Z, b<>0 ->
   Zabs (Zrem a b) < Zabs b.
 Proof.
-  destruct b as [ |b|b]; intro H; try solve [elim H;auto];
-  destruct a as [ |a|a]; try solve [compute;auto]; unfold Zrem, Zquotrem;
-  generalize (Pdiv_eucl_remainder a b); destruct Pdiv_eucl; simpl;
-  try rewrite Zabs_Zopp; rewrite Zabs_eq; auto using Z_of_N_le_0;
-  intros LT; apply (Z_of_N_lt _ _ LT).
+  apply Z.rem_bound_abs.
 Qed.
 
 (** The sign of the remainder is the one of [a]. Due to the possible
@@ -71,7 +65,7 @@ Theorem Zrem_sgn : forall a b:Z,
   0 <= Zsgn (Zrem a b) * Zsgn a.
 Proof.
   destruct b as [ |b|b]; destruct a as [ |a|a]; simpl; auto with zarith;
-  unfold Zrem, Zquotrem; destruct Pdiv_eucl;
+  unfold Zrem, Zquotrem; destruct N.pos_div_eucl;
   simpl; destruct n0; simpl; auto with zarith.
 Qed.
 
@@ -98,7 +92,7 @@ Proof.
   assert (0 <= Zrem a b).
    generalize (Zrem_sgn a b).
    destruct (Zle_lt_or_eq 0 a H).
-   rewrite <- Zsgn_pos in H1; rewrite H1; romega with *.
+   rewrite <- Zsgn_pos in H1; rewrite H1. romega with *.
    subst a; simpl; auto.
   generalize (Zrem_lt a b H0); romega with *.
 Qed.
@@ -142,37 +136,37 @@ Qed.
 Theorem Zquot_opp_l : forall a b:Z, (-a)÷b = -(a÷b).
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zquot, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zquot, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 Theorem Zquot_opp_r : forall a b:Z, a÷(-b) = -(a÷b).
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zquot, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zquot, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 Theorem Zrem_opp_l : forall a b:Z, Zrem (-a) b = -(Zrem a b).
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zrem, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zrem, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 Theorem Zrem_opp_r : forall a b:Z, Zrem a (-b) = Zrem a b.
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zrem, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zrem, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 Theorem Zquot_opp_opp : forall a b:Z, (-a)÷(-b) = a÷b.
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zquot, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zquot, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 Theorem Zrem_opp_opp : forall a b:Z, Zrem (-a) (-b) = -(Zrem a b).
 Proof.
  destruct a; destruct b; simpl; auto;
-  unfold Zrem, Zquotrem; destruct Pdiv_eucl; simpl; auto with zarith.
+  unfold Zrem, Zquotrem; destruct N.pos_div_eucl; simpl; auto with zarith.
 Qed.
 
 (** * Unicity results *)
@@ -356,7 +350,7 @@ Theorem Zquot_sgn: forall a b,
   0 <= Zsgn (a÷b) * Zsgn a * Zsgn b.
 Proof.
   destruct a as [ |a|a]; destruct b as [ |b|b]; simpl; auto with zarith;
-  unfold Zquot; simpl; destruct Pdiv_eucl; simpl; destruct n; simpl; auto with zarith.
+  unfold Zquot; simpl; destruct N.pos_div_eucl; simpl; destruct n; simpl; auto with zarith.
 Qed.
 
 (** * Relations between usual operations and Zmod and Zdiv *)

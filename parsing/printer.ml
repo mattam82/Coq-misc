@@ -27,11 +27,8 @@ open Tacexpr
 
 open Store.Field
 
-let emacs_str s alts =
-  match !Flags.print_emacs, !Flags.print_emacs_safechar with
-    | true, true -> alts
-    | true , false -> s
-    | false,_ -> ""
+let emacs_str s =
+  if !Flags.print_emacs then s else ""
 
 (**********************************************************************)
 (** Terms                                                             *)
@@ -220,7 +217,7 @@ let pr_context_limit n env =
 	   else
              let pidt = pr_var_decl env d in
 	     (i+1, (pps ++ fnl () ++
-		      str (emacs_str (String.make 1 (Char.chr 253)) "") ++
+		      str (emacs_str "") ++
 		      pidt)))
         env ~init:(0,(mt ()))
     in
@@ -229,7 +226,7 @@ let pr_context_limit n env =
         (fun env d pps ->
            let pnat = pr_rel_decl env d in
 	   (pps ++ fnl () ++
-	      str (emacs_str (String.make 1 (Char.chr 253)) "") ++
+	      str (emacs_str "") ++
 	      pnat))
         env ~init:(mt ())
     in
@@ -267,7 +264,7 @@ let default_pr_goal gs =
   in
     preamb ++
     str"  " ++ hv 0 (penv ++ fnl () ++
-		       str (emacs_str (String.make 1 (Char.chr 253)) "")  ++
+		       str (emacs_str "")  ++
 		       str "============================" ++ fnl ()  ++
 		       thesis ++ str " " ++  pc) ++ fnl ()
 
@@ -276,7 +273,7 @@ let pr_concl n sigma g =
   let (g,sigma) = Goal.V82.nf_evar sigma g in
   let env = Goal.V82.env sigma g in
   let pc = pr_ltype_env_at_top env (Goal.V82.concl sigma g) in
-    str (emacs_str (String.make 1 (Char.chr 253)) "")  ++
+    str (emacs_str "")  ++
       str "subgoal " ++ int n ++ str " is:" ++ cut () ++ str" "  ++ pc
 
 (* display evar type: a context and a type *)
@@ -314,7 +311,7 @@ let default_pr_subgoal n sigma =
   prrec n
 
 (* Print open subgoals. Checks for uninstantiated existential variables *)
-let default_pr_subgoals close_cmd sigma = function
+let default_pr_subgoals close_cmd check_guard sigma = function
   | [] ->
       begin
 	match close_cmd with
@@ -324,7 +321,11 @@ let default_pr_subgoals close_cmd sigma = function
 	| None ->
 	    let exl = Evarutil.non_instantiated sigma in
 	      if exl = [] then
-		(str"Proof completed." ++ fnl ())
+                if check_guard () then
+		  (str"Proof completed." ++ fnl ())
+                else
+                  (str"No more subgoals but unguarded recursive calls." ++
+                   fnl ())
 	      else
 		let pei = pr_evars_int 1 exl in
 		  (str "No more subgoals but non-instantiated existential " ++
@@ -352,7 +353,7 @@ let default_pr_subgoals close_cmd sigma = function
 
 
 type printer_pr = {
- pr_subgoals            : string option -> evar_map -> goal list -> std_ppcmds;
+ pr_subgoals            : string option -> (unit -> bool) -> evar_map -> goal list -> std_ppcmds;
  pr_subgoal             : int -> evar_map -> goal list -> std_ppcmds;
  pr_goal                : goal sigma -> std_ppcmds;
 }
@@ -374,24 +375,31 @@ let pr_goal     x = !printer_pr.pr_goal     x
 (* End abstraction layer                                              *)
 (**********************************************************************)
 
+let is_guarded pts =
+  let { Evd.it=gl ; sigma=sigma } = Proof.V82.top_goal pts in
+  let c = List.hd (Proof.partial_proof pts) in
+  try let _ = Inductiveops.control_only_guard (Goal.V82.env sigma gl) c in true
+  with _ -> false
+
 let pr_open_subgoals () =
   let p = Proof_global.give_me_the_proof () in
   let { Evd.it = goals ; sigma = sigma } = Proof.V82.subgoals p in
+  let check_guard () = is_guarded p in
   begin match goals with
   | [] -> let { Evd.it = bgoals ; sigma = bsigma } = Proof.V82.background_subgoals p in
             begin match bgoals with
-	    | [] -> pr_subgoals None sigma goals
-	    | _ -> pr_subgoals None bsigma bgoals ++ fnl () ++ fnl () ++
+	    | [] -> pr_subgoals None check_guard sigma goals
+	    | _ -> pr_subgoals None check_guard bsigma bgoals ++ fnl () ++ fnl () ++
 		      str"This subproof is complete, but there are still unfocused goals:"
 		(* spiwack: to stay compatible with the proof general and coqide,
 		    I use print the message after the goal. It would be better to have
 		    something like:
  		      str"This subproof is complete, but there are still unfocused goals:" 
-		      ++ fnl () ++ fnl () ++ pr_subgoals None bsigma bgoals
+		      ++ fnl () ++ fnl () ++ pr_subgoals None guarded bsigma bgoals
 		    instead. But it doesn't quite work.
 		*)
 	    end
-  | _ -> pr_subgoals None sigma goals
+  | _ -> pr_subgoals None check_guard sigma goals
   end
 
 let pr_nth_open_subgoal n =
@@ -539,3 +547,90 @@ let pr_instance_gmap insts =
   prlist_with_sep fnl (fun (gr, insts) ->
     prlist_with_sep fnl pr_instance (cmap_to_list insts))
     (Gmap.to_list insts)
+
+(** Inductive declarations *)
+
+open Declarations
+open Termops
+open Reduction
+open Inductive
+open Inductiveops
+
+let print_params env params =
+  if params = [] then mt () else pr_rel_context env params ++ brk(1,2)
+
+let print_constructors envpar names types =
+  let pc =
+    prlist_with_sep (fun () -> brk(1,0) ++ str "| ")
+      (fun (id,c) -> pr_id id ++ str " : " ++ pr_lconstr_env envpar c)
+      (Array.to_list (array_map2 (fun n t -> (n,t)) names types))
+  in
+  hv 0 (str "  " ++ pc)
+
+let build_ind_type env mip =
+  match mip.mind_arity with
+    | Monomorphic ar -> ar.mind_user_arity
+    | Polymorphic ar ->
+      it_mkProd_or_LetIn (mkSort (Type ar.poly_level)) mip.mind_arity_ctxt
+
+let print_one_inductive env mib ((_,i) as ind) =
+  let mip = mib.mind_packets.(i) in
+  let params = mib.mind_params_ctxt in
+  let args = extended_rel_list 0 params in
+  let arity = hnf_prod_applist env (build_ind_type env mip) args in
+  let cstrtypes = Inductive.type_of_constructors ind (mib,mip) in
+  let cstrtypes = Array.map (fun c -> hnf_prod_applist env c args) cstrtypes in
+  let envpar = push_rel_context params env in
+  hov 0 (
+    pr_id mip.mind_typename ++ brk(1,4) ++ print_params env params ++
+    str ": " ++ pr_lconstr_env envpar arity ++ str " :=") ++
+  brk(0,2) ++ print_constructors envpar mip.mind_consnames cstrtypes
+
+let print_mutual_inductive env mind mib =
+  let inds = list_tabulate (fun x -> (mind,x)) (Array.length mib.mind_packets)
+  in
+  hov 0 (
+    str (if mib.mind_finite then "Inductive " else "CoInductive ") ++
+    prlist_with_sep (fun () -> fnl () ++ str"  with ")
+      (print_one_inductive env mib) inds)
+
+let get_fields =
+  let rec prodec_rec l subst c =
+    match kind_of_term c with
+    | Prod (na,t,c) ->
+	let id = match na with Name id -> id | Anonymous -> id_of_string "_" in
+	prodec_rec ((id,true,substl subst t)::l) (mkVar id::subst) c
+    | LetIn (na,b,_,c) ->
+	let id = match na with Name id -> id | Anonymous -> id_of_string "_" in
+	prodec_rec ((id,false,substl subst b)::l) (mkVar id::subst) c
+    | _               -> List.rev l
+  in
+  prodec_rec [] []
+
+let print_record env mind mib =
+  let mip = mib.mind_packets.(0) in
+  let params = mib.mind_params_ctxt in
+  let args = extended_rel_list 0 params in
+  let arity = hnf_prod_applist env (build_ind_type env mip) args in
+  let cstrtypes = Inductive.type_of_constructors (mind,0) (mib,mip) in
+  let cstrtype = hnf_prod_applist env cstrtypes.(0) args in
+  let fields = get_fields cstrtype in
+  let envpar = push_rel_context params env in
+  hov 0 (
+    hov 0 (
+      str "Record " ++ pr_id mip.mind_typename ++ brk(1,4) ++
+      print_params env params ++
+      str ": " ++ pr_lconstr_env envpar arity ++ brk(1,2) ++
+      str ":= " ++ pr_id mip.mind_consnames.(0)) ++
+    brk(1,2) ++
+    hv 2 (str "{ " ++
+      prlist_with_sep (fun () -> str ";" ++ brk(2,0))
+        (fun (id,b,c) ->
+	  pr_id id ++ str (if b then " : " else " := ") ++
+	  pr_lconstr_env envpar c) fields) ++ str" }")
+
+let pr_mutual_inductive_body env mind mib =
+  if mib.mind_record & not !Flags.raw_print then
+    print_record env mind mib
+  else
+    print_mutual_inductive env mind mib

@@ -21,8 +21,8 @@ Require Import Orders NPeano POrderedType NArith
 
 Module Nat_as_OT := NPeano.Nat.
 Module Positive_as_OT := POrderedType.Positive_as_OT.
-Module N_as_OT := NArith.N.
-Module Z_as_OT := ZBinary.Z.
+Module N_as_OT := BinNat.N.
+Module Z_as_OT := BinInt.Z.
 
 (** An OrderedType can now directly be seen as a DecidableType *)
 

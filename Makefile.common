@@ -233,7 +233,7 @@ IDEMOD:=$(shell cat ide/ide.mllib)
 
 COQENVCMO:=$(CONFIG) \
   lib/pp_control.cmo lib/pp.cmo  lib/compat.cmo lib/flags.cmo \
-  lib/segmenttree.cmo lib/unicodetable.cmo lib/util.cmo lib/system.cmo \
+  lib/segmenttree.cmo lib/unicodetable.cmo lib/util.cmo lib/errors.cmo lib/system.cmo \
   lib/envars.cmo
 
 COQMKTOPCMO:=$(COQENVCMO) scripts/tolink.cmo scripts/coqmktop.cmo 
@@ -243,7 +243,7 @@ COQCCMO:=$(COQENVCMO) toplevel/usage.cmo scripts/coqc.cmo
 ## Misc
 
 CSDPCERTCMO:=$(addprefix plugins/micromega/, \
-  mutils.cmo 	micromega.cmo 	mfourier.cmo 	certificate.cmo \
+  mutils.cmo 	micromega.cmo \
   sos_types.cmo sos_lib.cmo sos.cmo 	csdpcert.cmo )
 
 DEBUGPRINTERS:=dev/top_printers.cmo dev/vm_printers.cmo dev/printers.cma

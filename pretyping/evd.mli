@@ -39,8 +39,7 @@ val map_fl : ('a -> 'b) -> 'a freelisted -> 'b freelisted
     (e.g. the solution [P] to [?X u v = P u v] can be eta-expanded twice)
 *)
 
-type instance_constraint =
-    IsSuperType | IsSubType | ConvUpToEta of int | UserGiven
+type instance_constraint = IsSuperType | IsSubType | Conv
 
 (** Status of the unification of the type of an instance against the type of
      the meta it instantiates:
@@ -143,6 +142,9 @@ val progress_evar_map : evar_map -> evar_map -> bool
 
 val empty : evar_map
 val is_empty : evar_map -> bool
+(** [has_undefined sigma] is [true] if and only if
+    there are uninstantiated evars in [sigma]. *)
+val has_undefined : evar_map -> bool
 
 val add : evar_map -> evar -> evar_info -> evar_map
 
