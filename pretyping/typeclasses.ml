@@ -245,15 +245,15 @@ let build_subclasses ~check env sigma glob pri =
       match class_of_constr ty with
       | None -> []
       | Some (rels, (tc, args)) ->
-	let instapp = appvectc c (Termops.extended_rel_vect 0 rels) in
+	let instapp = Reductionops.whd_beta sigma (appvectc c (Termops.extended_rel_vect 0 rels)) in
 	let projargs = Array.of_list (args @ [instapp]) in
 	let projs = list_map_filter 
 	  (fun (n, b, proj) ->
 	   match b with 
 	   | None -> None
 	   | Some pri' ->
-	     let p = Option.get proj in
-	     let body = it_mkLambda_or_LetIn (mkApp (mkConst p, projargs)) rels in
+	     let proj = Option.get proj in
+	     let body = it_mkLambda_or_LetIn (mkApp (mkConst proj, projargs)) rels in
 	       if check && check_instance env sigma body then None
 	       else 
 		 let pri = 
@@ -262,7 +262,7 @@ let build_subclasses ~check env sigma glob pri =
 		   | Some p, None -> Some (p + 1)
 		   | _, _ -> None
 		 in
-		   Some (ConstRef p, pri, body)) tc.cl_projs 
+		   Some (ConstRef proj, pri, body)) tc.cl_projs 
 	in
 	let declare_proj hints (cref, pri, body) =
 	  let rest = aux pri body in
