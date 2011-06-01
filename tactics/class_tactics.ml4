@@ -504,7 +504,8 @@ let isProp env sigma concl =
     kind_of_term ty = Sort (Prop Null)
 
 let needs_backtrack only_classes env evd oev concl =
-  if isProp env evd concl then (Intset.is_empty (Evarutil.evars_of_term concl))
+  if oev = None || isProp env evd concl then
+    not (Intset.is_empty (Evarutil.evars_of_term concl))
   else true
 
 let then_list (second : atac) (sk : (auto_result, 'a) sk) : (auto_result, 'a) sk =
