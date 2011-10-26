@@ -958,6 +958,17 @@ let w_typed_unify_list env evd flags f1 l1 f2 l2 =
   let evd = w_merge env true flags subst in
   try_resolve_typeclasses env evd flags (applist(f1,l1)) (applist(f2,l2))
 
+let w_typed_unify_list env flags f1 l1 f2 l2 evd =
+  let flags' = { flags with resolve_evars = false } in
+  let f1,l1,f2,l2 = adjust_app_list_size f1 l1 f2 l2 in
+  let (mc1,evd') = retract_coercible_metas evd in
+  let subst =
+    List.fold_left2 (fun subst m n ->
+      unify_0_with_initial_metas subst true env CONV flags' m n) (evd',[],[])
+      (f1::l1) (f2::l2) in
+  let evd = w_merge env true flags subst in
+  try_resolve_typeclasses env evd flags (applist(f1,l1)) (applist(f2,l2))
+
 (* takes a substitution s, an open term op and a closed term cl
    try to find a subterm of cl which matches op, if op is just a Meta
    FAIL because we cannot find a binding *)

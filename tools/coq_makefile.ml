@@ -504,6 +504,30 @@ let main_targets vfiles (mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles) other
       print "CMXSFILES=$(CMXFILES:.cmx=.cmxs) $(CMXAFILES:.cmxa=.cmxs)\n";
       classify_files_by_root "CMXSFILES" (l1@l2) inc;
   end;
+  begin match mlifiles,mlfiles with
+    |[],[] -> ()
+    |l,[] ->
+       print "CMIFILES:=$(MLIFILES:.mli=.cmi)\n";
+	classify_files_by_root "CMIFILES" l inc;
+    |[],l ->
+      print "CMIFILES:=$(CMOFILES:.cmo=.cmi)\n";
+      classify_files_by_root "CMIFILES" l inc;
+    |l1,l2 ->
+      print "CMIFILES:=$(sort $(CMOFILES:.cmo=.cmi) $(MLIFILES:.mli=.cmi))\n";
+      classify_files_by_root "CMIFILES" (l1@l2) inc;
+  end;
+  begin match mllibfiles,mlsfiles with
+    |[],[] -> ()
+    |l,[] ->
+      print "CMXSFILES:=$(CMXAFILES:.cmxa=.cmxs)\n";
+      classify_files_by_root "CMXSFILES" l inc;
+    |[],l ->
+      print "CMXSFILES:=$(CMXFILES:.cmx=.cmxs)\n";
+      classify_files_by_root "CMXSFILES" l inc;
+    |l1,l2 ->
+      print "CMXSFILES:=$(CMXFILES:.cmx=.cmxs) $(CMXAFILES:.cmxa=.cmxs)\n";
+      classify_files_by_root "CMXSFILES" (l1@l2) inc;
+  end;
   print "\nall: ";
   if !some_vfile then print "$(VOFILES) ";
   if !some_mlfile || !some_ml4file || !some_mlpackfile then print "$(CMOFILES) ";

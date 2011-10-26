@@ -1425,6 +1425,24 @@ let reconsider_conv_pbs conv_algo evd =
  * Returns an optional list of evars that were instantiated, or None
  * if the problem couldn't be solved. *)
 
+let check_evar_instance evd evk1 conv_algo =
+  let evi = Evd.find evd evk1 in
+  let evenv = evar_unfiltered_env evi in
+  let evc = nf_evar evd evi.evar_concl in
+    match evi.evar_body with
+    | Evar_defined body ->
+      (* FIXME: The body might be ill-typed when this is called from w_merge *)
+      let ty = 
+	try Retyping.get_type_of evenv evd body 
+	with _ -> error "Ill-typed evar instance"
+      in
+      let ty = nf_evar evd ty in
+      let evd,b = conv_algo evenv evd Reduction.CUMUL ty evc in
+	if b then evd else
+	  user_err_loc (fst (evar_source evk1 evd),"",
+			str "Unable to find a well-typed instantiation")
+    | Evar_empty -> evd (* Resulted in a constraint *)
+
 (* Rq: uncomplete algorithm if pbty = CONV_X_LEQ ! *)
 let solve_simple_eqn conv_algo ?(choose=false) env evd (pbty,(evk1,args1 as ev1),t2) =
   try
