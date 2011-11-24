@@ -261,10 +261,20 @@ Proof. split; red; intro. firstorder. firstorder.
   destruct (i0 x0 y0). firstorder. 
 Defined.
 
+Instance crelation_equivalence_equivalence_prop (A : Type) :
+  ! CEquivalence (relation A) (@crelation_equivalence A).
+Proof. split; red; intro. firstorder. firstorder. 
+  intuition. constructor. destruct X; destruct X0. intros. destruct (i x0 y0). 
+  destruct (i0 x0 y0). firstorder. 
+Defined.
+
 Instance crelation_implication_preorder A : CPreOrder (@subcrelation A) := {}.
 Proof. red. intros; firstorder. 
   repeat red. intros. firstorder. 
 Defined.
+
+Instance crelation_implication_preorder_prop A : ! CPreOrder (relation A) (@subcrelation A).
+Proof. firstorder. Defined.
 
 (** *** Partial Order.
    A partial order is a preorder which is additionally antisymmetric.
@@ -286,6 +296,13 @@ Proof with auto.
   constructor. auto.
 Defined.
 
+Instance crelation_porder : CPartialOrder (A:=relation A) crelation_equivalence subcrelation.
+Proof with auto.
+  reduce_goal.
+  constructor. firstorder. constructor. constructor. firstorder. constructor; firstorder.
+  destruct X. destruct i. firstorder.
+  destruct X. destruct i. firstorder.
+Defined.
 
 (** The partial order defined by subrelation and relation equivalence. *)
 

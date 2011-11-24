@@ -30,7 +30,7 @@ Local Obligation Tactic := simpl_relation.
    The relation [R] will be instantiated by [respectful] and [A] by an arrow
    type for usual morphisms. *)
 
-Class Proper {A} (R : relation A) (m : A) : Prop :=
+Class Proper {A} (R : crelation A) (m : A) :=
   proper_prf : R m m.
 
 (** Respectful morphisms. *)
@@ -40,15 +40,15 @@ Class Proper {A} (R : relation A) (m : A) : Prop :=
 Definition respectful_hetero
   (A B : Type)
   (C : A -> Type) (D : B -> Type)
-  (R : A -> B -> Prop)
-  (R' : forall (x : A) (y : B), C x -> D y -> Prop) :
-    (forall x : A, C x) -> (forall x : B, D x) -> Prop :=
+  (R : A -> B -> Type)
+  (R' : forall (x : A) (y : B), C x -> D y -> Type) :
+    (forall x : A, C x) -> (forall x : B, D x) -> Type :=
     fun f g => forall x y, R x y -> R' x y (f x) (g y).
 
 (** The non-dependent version is an instance where we forget dependencies. *)
 
 Definition respectful {A B : Type}
-  (R : relation A) (R' : relation B) : relation (A -> B) :=
+  (R : crelation A) (R' : crelation B) : crelation (A -> B) :=
   Eval compute in @respectful_hetero A A (fun _ => B) (fun _ => B) R (fun _ _ => R').
 
 (** Notations reminiscent of the old syntax for declaring morphisms. *)
@@ -101,7 +101,7 @@ Ltac f_equiv :=
   | |- ?R (?f ?x) (?f' _) =>
     let T := type of x in
     let Rx := fresh "R" in
-    evar (Rx : relation T);
+    evar (Rx : crelation T);
     let H := fresh in
     assert (H : (Rx==>R)%signature f f');
     unfold Rx in *; clear Rx; [ f_equiv | apply H; clear H; try reflexivity ]
@@ -117,10 +117,15 @@ Definition forall_def {A : Type} (B : A -> Type) : Type := forall x : A, B x.
 
 (** Dependent pointwise lifting of a relation on the range. *)
 
+Definition forall_crelation {A : Type} {B : A -> Type}
+ (sig : forall a, crelation (B a)) : crelation (forall x, B x) :=
+ fun f g => forall a, sig a (f a) (g a).
+
 Definition forall_relation {A : Type} {B : A -> Type}
  (sig : forall a, relation (B a)) : relation (forall x, B x) :=
  fun f g => forall a, sig a (f a) (g a).
 
+Arguments forall_crelation {A B}%type sig%signature _ _.
 Arguments forall_relation {A B}%type sig%signature _ _.
 
 (** Non-dependent pointwise lifting *)
@@ -129,8 +134,8 @@ Definition pointwise_relation (A : Type) {B : Type} (R : relation B) : relation 
   Eval compute in forall_relation (B:=fun _ => B) (fun _ => R).
 
 Lemma pointwise_pointwise A B (R : relation B) :
-  relation_equivalence (pointwise_relation A R) (@eq A ==> R).
-Proof. intros. split. simpl_relation. firstorder. Qed.
+  crelation_equivalence (pointwise_relation A R) (@eq A ==> R).
+Proof. red. intros. unfold pointwise_relation, respectful; firstorder. now subst. Defined.
 
 (** We can build a PER on the Coq function space if we have PERs on the domain and
    codomain. *)
@@ -159,7 +164,7 @@ Proof. firstorder. Qed.
 
 Lemma subrelation_respectful `(subl : subrelation A R₂ R₁, subr : subrelation B S₁ S₂) :
   subrelation (R₁ ==> S₁) (R₂ ==> S₂).
-Proof. simpl_relation. apply subr. apply H. apply subl. apply H0. Qed.
+Proof. simpl_relation. Defined.
 
 (** And of course it is reflexive. *)
 
@@ -174,7 +179,7 @@ Hint Extern 3 (@subrelation _ ?T ?U) => subrelation_tac T U : typeclass_instance
 
 (** [Proper] is itself a covariant morphism for [subrelation]. *)
 
-Lemma subrelation_proper `(mor : Proper A R₁ m, unc : Unconvertible (relation A) R₁ R₂,
+Lemma subrelation_proper `(mor : Proper A R₁ m, unc : Unconvertible _ R₁ R₂,
   sub : subrelation A R₁ R₂) : Proper R₂ m.
 Proof.
   intros. apply sub. apply mor.
@@ -189,9 +194,9 @@ Ltac proper_subrelation :=
 
 Hint Extern 5 (@Proper _ ?H _) => proper_subrelation : typeclass_instances.
 
-Instance proper_subrelation_proper :
-  Proper (subrelation ++> eq ==> impl) (@Proper A).
-Proof. reduce. subst. firstorder. Qed.
+(* Instance proper_subrelation_proper : *)
+(*   Proper (subrelation ++> eq ==> arrow) (@Proper A). *)
+(* Proof. reduce. subst. firstorder. Qed. *)
 
 (** Essential subrelation instances for [iff], [impl] and [pointwise_relation]. *)
 
@@ -201,14 +206,14 @@ Proof. firstorder. Qed.
 Instance iff_inverse_impl_subrelation : subrelation iff (inverse impl) | 2.
 Proof. firstorder. Qed.
 
-Instance pointwise_subrelation {A} `(sub : subrelation B R R') :
+Instance pointwise_subrelation {A} `(sub : subrelation B (R : relation B) (R' : relation B)) :
   subrelation (pointwise_relation A R) (pointwise_relation A R') | 4.
 Proof. reduce. unfold pointwise_relation in *. apply sub. apply H. Qed.
 
 (** For dependent function types. *)
 Lemma forall_subrelation A (B : A -> Type) (R S : forall x : A, relation (B x)) :
   (forall a, subrelation (R a) (S a)) -> subrelation (forall_relation R) (forall_relation S).
-Proof. reduce. apply H. apply H0. Qed.
+Proof. reduce. apply X. apply H. Qed.
 
 (** We use an extern hint to help unification. *)
 
@@ -218,7 +223,7 @@ Hint Extern 4 (subrelation (@forall_relation ?A ?B ?R) (@forall_relation _ _ ?S)
 (** Any symmetric relation is equal to its inverse. *)
 
 Lemma subrelation_symmetric A R `(Symmetric A R) : subrelation (inverse R) R.
-Proof. reduce. red in H0. symmetry. assumption. Qed.
+Proof. reduce. red in X. symmetry. assumption. Qed.
 
 Hint Extern 4 (subrelation (inverse _) _) => 
   class_apply @subrelation_symmetric : typeclass_instances.
@@ -232,7 +237,7 @@ Program Definition complement_proper
  Next Obligation.
   Proof.
     unfold complement.
-    pose (mR x y H x0 y0 H0).
+    pose (mR x y X x0 y0 X0).
     intuition.
   Qed.
  
@@ -257,7 +262,7 @@ Hint Extern 1 (Proper _ (flip _)) =>
    contravariant in the first argument, covariant in the second. *)
 
 Program Instance trans_contra_co_morphism
-  `(Transitive A R) : Proper (R --> R ++> impl) R.
+  `(Transitive A (R : relation A)) : Proper (R --> R ++> impl) R.
 
   Next Obligation.
   Proof with auto.
@@ -265,10 +270,19 @@ Program Instance trans_contra_co_morphism
     transitivity x0...
   Qed.
 
+Program Instance trans_contra_co_cmorphism
+  `(Transitive A R) : Proper (R --> R ++> arrow) R.
+
+  Next Obligation.
+  Proof with auto.
+    transitivity x...
+    transitivity x0...
+  Defined.
+
 (** Proper declarations for partial applications. *)
 
 Program Instance trans_contra_inv_impl_morphism
-  `(Transitive A R) : Proper (R --> inverse impl) (R x) | 3.
+  `(Transitive A (R : relation A)) : Proper (R --> inverse impl) (R x) | 3.
 
   Next Obligation.
   Proof with auto.
@@ -276,7 +290,7 @@ Program Instance trans_contra_inv_impl_morphism
   Qed.
 
 Program Instance trans_co_impl_morphism
-  `(Transitive A R) : Proper (R ++> impl) (R x) | 3.
+  `(Transitive A (R : relation A)) : Proper (R ++> impl) (R x) | 3.
 
   Next Obligation.
   Proof with auto.
@@ -284,7 +298,7 @@ Program Instance trans_co_impl_morphism
   Qed.
 
 Program Instance trans_sym_co_inv_impl_morphism
-  `(PER A R) : Proper (R ++> inverse impl) (R x) | 3.
+  `(PER A (R : relation A)) : Proper (R ++> inverse impl) (R x) | 3.
 
   Next Obligation.
   Proof with auto.
@@ -292,7 +306,7 @@ Program Instance trans_sym_co_inv_impl_morphism
   Qed.
 
 Program Instance trans_sym_contra_impl_morphism
-  `(PER A R) : Proper (R --> impl) (R x) | 3.
+  `(PER A (R : relation A)) : Proper (R --> impl) (R x) | 3.
 
   Next Obligation.
   Proof with auto.
@@ -300,7 +314,7 @@ Program Instance trans_sym_contra_impl_morphism
   Qed.
 
 Program Instance per_partial_app_morphism
-  `(PER A R) : Proper (R ==> iff) (R x) | 2.
+  `(PER A (R : relation A)) : Proper (R ==> iff) (R x) | 2.
 
   Next Obligation.
   Proof with auto.
@@ -314,7 +328,7 @@ Program Instance per_partial_app_morphism
    to get an [R y z] goal. *)
 
 Program Instance trans_co_eq_inv_impl_morphism
-  `(Transitive A R) : Proper (R ==> (@eq A) ==> inverse impl) R | 2.
+  `(Transitive A (R : relation A)) : Proper (R ==> (@eq A) ==> inverse impl) R | 2.
 
   Next Obligation.
   Proof with auto.
@@ -323,7 +337,7 @@ Program Instance trans_co_eq_inv_impl_morphism
 
 (** Every Symmetric and Transitive relation gives rise to an equivariant morphism. *)
 
-Program Instance PER_morphism `(PER A R) : Proper (R ==> R ==> iff) R | 1.
+Program Instance PER_morphism `(PER A (R : relation A)) : Proper (R ==> R ==> iff) R | 1.
 
   Next Obligation.
   Proof with auto.
@@ -333,7 +347,7 @@ Program Instance PER_morphism `(PER A R) : Proper (R ==> R ==> iff) R | 1.
     transitivity y... transitivity y0... symmetry...
   Qed.
 
-Lemma symmetric_equiv_inverse `(Symmetric A R) : relation_equivalence R (flip R).
+Lemma symmetric_equiv_inverse `(Symmetric A (R : relation A)) : relation_equivalence R (flip R).
 Proof. firstorder. Qed.
 
 Program Instance compose_proper A B C R₀ R₁ R₂ :
@@ -341,8 +355,7 @@ Program Instance compose_proper A B C R₀ R₁ R₂ :
 
   Next Obligation.
   Proof.
-    simpl_relation.
-    unfold compose. apply H. apply H0. apply H1.
+    simpl_relation. firstorder.
   Qed.
 
 (** Coq functions are morphisms for Leibniz equality,
