@@ -1,4 +1,3 @@
-
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
 (* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
@@ -10,9 +9,9 @@
 open Configwin
 open Printf
 
-let pref_file = Filename.concat Minilib.home ".coqiderc"
+let pref_file = Filename.concat Minilib.xdg_config_home "coqiderc"
 
-let accel_file = Filename.concat Minilib.home ".coqide.keys"
+let accel_file = Filename.concat Minilib.xdg_config_home "coqide.keys"
 
 let mod_to_str (m:Gdk.Tags.modifier) =
   match m with
@@ -168,6 +167,8 @@ let contextual_menus_on_goal = ref (fun x -> ())
 let resize_window = ref (fun () -> ())
 
 let save_pref () =
+  if not (Sys.file_exists Minilib.xdg_config_home)
+  then Unix.mkdir Minilib.xdg_config_home 0o700;
   (try GtkData.AccelMap.save accel_file
   with _ -> ());
   let p = !current in
@@ -222,8 +223,10 @@ let save_pref () =
     Config_lexer.print_file pref_file
 
 let load_pref () =
-  GtkData.AccelMap.load (Filename.concat !Minilib.coqlib "ide/default_accel_map");
-  GtkData.AccelMap.load accel_file;
+  let accel_dir = List.find
+    (fun x -> Sys.file_exists (Filename.concat x "coqide.keys"))
+    Minilib.xdg_config_dirs in
+  GtkData.AccelMap.load (Filename.concat accel_dir "coqide.keys");
   let p = !current in
 
     let m = Config_lexer.load_file pref_file in

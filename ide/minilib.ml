@@ -64,13 +64,29 @@ let string_map f s =
 let subst_command_placeholder s t =
   Str.global_replace (Str.regexp_string "%s") t s
 
+let path_to_list p =
+  let sep = Str.regexp (if Sys.os_type = "Win32" then ";" else ":") in
+    Str.split sep p
+
 (* On win32, the home directory is probably not in $HOME, but in
    some other environment variable *)
 
 let home =
   try Sys.getenv "HOME" with Not_found ->
     try (Sys.getenv "HOMEDRIVE")^(Sys.getenv "HOMEPATH") with Not_found ->
-      try Sys.getenv "USERPROFILE" with Not_found -> "."
+      try Sys.getenv "USERPROFILE" with Not_found -> Filename.current_dir_name
+
+let xdg_config_home =
+  try
+    Filename.concat (Sys.getenv "XDG_CONFIG_HOME") "coq"
+  with Not_found ->
+    Filename.concat home "/.config/coq"
+
+let xdg_config_dirs =
+  xdg_config_home :: (try
+    List.map (fun dir -> Filename.concat dir "coq") (path_to_list (Sys.getenv "XDG_CONFIG_DIRS"))
+  with Not_found -> "/etc/xdg/coq"::(match Coq_config.configdir with |None -> [] |Some d -> [d]))
+
 
 let coqlib = ref ""
 let coqtop_path = ref ""

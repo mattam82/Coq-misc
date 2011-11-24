@@ -134,10 +134,10 @@ type onlyparsing_flag = bool (* true = Parse only;  false = Print also     *)
 type infer_flag     = bool (* true = try to Infer record; false = nothing  *)
 type full_locality_flag = bool option (* true = Local; false = Global      *)
 
-type option_value =
-  | StringValue of string
-  | IntValue of int
+type option_value = Goptions.option_value =
   | BoolValue of bool
+  | IntValue of int option
+  | StringValue of string
 
 type option_ref_value =
   | StringRefValue of string
@@ -224,8 +224,6 @@ type vernac_expr =
   | VernacOpenCloseScope of (locality_flag * bool * scope_name)
   | VernacDelimiters of scope_name * string
   | VernacBindScope of scope_name * class_rawexpr list
-  | VernacArgumentsScope of locality_flag * reference or_by_notation *
-      scope_name option list
   | VernacInfix of locality_flag * (lstring * syntax_modifier list) *
       constr_expr * scope_name option
   | VernacNotation of
@@ -318,6 +316,12 @@ type vernac_expr =
       locality_flag * onlyparsing_flag
   | VernacDeclareImplicits of locality_flag * reference or_by_notation *
       (explicitation * bool * bool) list list
+  | VernacArguments of locality_flag * reference or_by_notation * 
+      ((name * bool * (loc * string) option * bool * bool) list) list *
+      int * [ `SimplDontExposeCase | `SimplNeverUnfold
+            | `ClearImplicits | `ClearScopes | `DefaultImplicits ] list
+  | VernacArgumentsScope of locality_flag * reference or_by_notation *
+      scope_name option list
   | VernacReserve of simple_binder list
   | VernacGeneralizable of locality_flag * (lident list) option
   | VernacSetOpacity of

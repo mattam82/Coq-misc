@@ -833,9 +833,13 @@ object(self)
           | Ide_intf.Fail (l,str) ->
             self#set_message ("Error in coqtop :\n"^str)
           | Ide_intf.Good goals ->
+            let hints = match Coq.hints !mycoqtop with
+            | Ide_intf.Fail (_, _) -> None
+            | Ide_intf.Good hints -> hints
+            in
             Ideproof.display
               (Ideproof.mode_tactic menu_callback)
-              proof_view goals
+              proof_view goals hints
       with
         | e -> prerr_endline (Printexc.to_string e)
     end
@@ -2179,11 +2183,21 @@ let main files =
         let av = current.analyzed_view in
         ignore (f av);
         pop_info ();
-        push_info
-          (match Coq.status !(current.toplvl) with
-            | Ide_intf.Fail (l,str) ->
-	      "Oops, problem while fetching coq status."
-            | Ide_intf.Good str -> str)
+        let msg = match Coq.status !(current.toplvl) with
+        | Ide_intf.Fail (l, str) ->
+          "Oops, problem while fetching coq status."
+        | Ide_intf.Good status ->
+          let path = match status.Ide_intf.status_path with
+          | None -> ""
+          | Some p -> " in " ^ p
+          in
+          let name = match status.Ide_intf.status_proofname with
+          | None -> ""
+          | Some n -> ", proving " ^ n
+          in
+          "Ready" ^ path ^ name
+        in
+        push_info msg
       )
       [session_notebook#current_term]
   in

@@ -104,12 +104,13 @@ val pr_transparent_state   : transparent_state -> std_ppcmds
 (** Proofs *)
 
 val pr_goal                : goal sigma -> std_ppcmds
-val pr_subgoals            : string option -> evar_map -> goal list -> std_ppcmds
+val pr_subgoals            : string option -> evar_map -> evar list -> goal list -> std_ppcmds
 val pr_subgoal             : int -> evar_map -> goal list -> std_ppcmds
 val pr_concl               : int -> evar_map -> goal -> std_ppcmds
 
 val pr_open_subgoals       : unit -> std_ppcmds
 val pr_nth_open_subgoal    : int -> std_ppcmds
+val pr_evar                : (evar * evar_info) -> std_ppcmds
 val pr_evars_int           : int -> (evar * evar_info) list -> std_ppcmds
 
 val pr_prim_rule           : prim_rule -> std_ppcmds
@@ -140,7 +141,7 @@ val pr_assumptionset :
 val pr_goal_by_id : string -> std_ppcmds
 
 type printer_pr = {
- pr_subgoals            : string option -> evar_map -> goal list -> std_ppcmds;
+ pr_subgoals            : string option -> evar_map -> evar list -> goal list -> std_ppcmds;
  pr_subgoal             : int -> evar_map -> goal list -> std_ppcmds;
  pr_goal                : goal sigma -> std_ppcmds;
 };;

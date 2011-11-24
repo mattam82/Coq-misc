@@ -763,6 +763,78 @@ let vernac_declare_implicits local r = function
       Impargs.declare_manual_implicits local (smart_global r) ~enriching:false
 	(List.map (List.map (fun (ex,b,f) -> ex, (b,true,f))) imps)
 
+let vernac_declare_arguments local r l nargs flags =
+  let names = List.map (List.map (fun (id, _,_,_,_) -> id)) l in
+  let names, rest = List.hd names, List.tl names in
+  if List.exists ((<>) names) rest then
+    error "All arguments lists must declare the same names";
+  if not (Util.list_distinct (List.filter ((<>) Anonymous) names)) then
+    error "Arguments names must be distinct";
+  let sr = smart_global r in
+  let inf_names =
+    Impargs.compute_implicits_names (Global.env()) (Global.type_of_global sr) in
+  let string_of_name = function Anonymous -> "_" | Name id -> string_of_id id in
+  let rec check li ld = match li, ld with
+    | [], [] -> ()
+    | [], x::_ -> error ("Extra argument " ^ string_of_name x)
+    | l, [] -> error ("The following arguments are not declared: " ^
+       (String.concat ", " (List.map string_of_name l)))
+    | _::li, _::ld -> check li ld in
+  if names <> [] then
+    List.iter (fun l -> check inf_names l) (names :: rest);
+  let some_renaming_specified, implicits =
+    if names = [] then false, [[]] else
+    let never_implicit x =
+      not (List.exists (List.exists (fun (y, _,_, b, _) -> b && y = x)) l) in
+    Util.list_fold_map (fun sr il ->
+      let sr', impl = Util.list_fold_map (fun b -> function
+        | (Anonymous, _,_, true, _), _ ->
+            error "Implicit arguments must have a name"
+        | (Name x,_,_,false,_),Name y when x <> y && never_implicit (Name x)->
+            error ("Reanaming a non implicit argument " ^ string_of_id y ^
+              " to " ^ string_of_id x)
+        | (Name x, _,_, true, _), Anonymous ->
+            error ("Argument "^string_of_id x^" is anonymous and cannot be"^
+              " declared implicit")
+        | (Name iid, _,_, true, max), Name id ->
+           b || iid <> id, Some (ExplByName id, max, false)
+        | _ -> b, None)
+        false (List.combine il inf_names) in
+      sr || sr', Util.list_map_filter (fun x -> x) impl)
+      false l in
+  if some_renaming_specified then
+    Arguments_renaming.rename_arguments local sr (names :: rest);
+  (* All other infos are in the first item of l *)
+  let l = List.hd l in
+  let some_implicits_specified = implicits <> [[]] in
+  let scopes = List.map (function
+    | (_,_, None,_,_) -> None
+    | (_,_, Some (o, k), _,_) -> 
+        try Some(ignore(Notation.find_scope k); k)
+        with _ -> Some (Notation.find_delimiters_scope o k)) l in
+  let some_scopes_specified = List.exists ((<>) None) scopes in
+  let rargs =
+    Util.list_map_filter (function (n, true) -> Some n | _ -> None)
+      (Util.list_map_i (fun i (_, b, _,_,_) -> i, b) 0 l) in
+  if some_scopes_specified || List.mem `ClearScopes flags then
+    vernac_arguments_scope local r scopes;
+  if not some_implicits_specified && List.mem `DefaultImplicits flags then
+    vernac_declare_implicits local r []
+  else if some_implicits_specified || List.mem `ClearImplicits flags then
+    vernac_declare_implicits local r implicits;
+  if nargs >= 0 && nargs < List.fold_left max 0 rargs then
+    error "The \"/\" option must be places after the last \"!\"";
+  let rec narrow = function
+    | #Tacred.simpl_flag as x :: tl -> x :: narrow tl
+    | [] -> [] | _ :: tl -> narrow tl in
+  let flags = narrow flags in
+  if rargs <> [] || nargs >= 0 || flags <> [] then
+    match sr with
+    | ConstRef _ as c ->
+       Tacred.set_simpl_behaviour local c (rargs, nargs, flags)
+    | _ -> error "Simpl behaviour can be declared for constants only"
+;;
+
 let vernac_reserve bl =
   let sb_decl = (fun (idl,c) ->
     let t = Constrintern.interp_type Evd.empty (Global.env()) c in
@@ -997,7 +1069,7 @@ let vernac_set_opacity local str =
 
 let vernac_set_option locality key = function
   | StringValue s -> set_string_option_value_gen locality key s
-  | IntValue n -> set_int_option_value_gen locality key (Some n)
+  | IntValue n -> set_int_option_value_gen locality key n
   | BoolValue b -> set_bool_option_value_gen locality key b
 
 let vernac_unset_option locality key =
@@ -1043,7 +1115,7 @@ let vernac_check_may_eval redexp glopt rc =
   let j =
     try
       Evarutil.check_evars env sigma sigma' c;
-      Typeops.typing env c
+      Arguments_renaming.rename_typing env c
     with P.PretypeError (_,_,P.UnsolvableImplicit _)
       | Compat.Loc.Exc_located (_,P.PretypeError (_,_,P.UnsolvableImplicit _)) ->
       Evarutil.j_nf_evar sigma' (Retyping.get_judgment_of env sigma' c) in
@@ -1377,6 +1449,7 @@ let interp c = match c with
   | VernacHints (local,dbnames,hints) -> vernac_hints local dbnames hints
   | VernacSyntacticDefinition (id,c,l,b) ->vernac_syntactic_definition id c l b
   | VernacDeclareImplicits (local,qid,l) ->vernac_declare_implicits local qid l
+  | VernacArguments (local, qid, l, narg, flags) -> vernac_declare_arguments local qid l narg flags 
   | VernacReserve bl -> vernac_reserve bl
   | VernacGeneralizable (local,gen) -> vernac_generalizable local gen
   | VernacSetOpacity (local,qidl) -> vernac_set_opacity local qidl

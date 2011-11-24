@@ -165,6 +165,7 @@ let rec attribute_of_vernac_command = function
   | VernacHints _ -> []
   | VernacSyntacticDefinition _ -> []
   | VernacDeclareImplicits _ -> []
+  | VernacArguments _ -> [] 
   | VernacDeclareReduction _ -> []
   | VernacReserve _ -> []
   | VernacGeneralizable _ -> []
@@ -400,6 +401,20 @@ let concl_next_tac sigma concl =
     "right"
   ])
 
+let process_goal sigma g =
+  let env = Goal.V82.env sigma g in
+  let ccl =
+    let norm_constr = Reductionops.nf_evar sigma (Goal.V82.concl sigma g) in
+    string_of_ppcmds (pr_ltype_env_at_top env norm_constr) in
+  let process_hyp h_env d acc =
+    let d = Term.map_named_declaration (Reductionops.nf_evar sigma) d in
+    (string_of_ppcmds (pr_var_decl h_env d)) :: acc in
+(*           (string_of_ppcmds (pr_var_decl h_env d), hyp_next_tac sigma h_env d)::acc in *)
+  let hyps =
+    List.rev (Environ.fold_named_context process_hyp env ~init: []) in
+  { Ide_intf.goal_hyp = hyps; Ide_intf.goal_ccl = ccl }
+(*         hyps,(ccl,concl_next_tac sigma g)) *)
+
 let goals () =
   try
     let pfts =
@@ -408,40 +423,32 @@ let goals () =
   let { Evd.it=all_goals ; sigma=sigma } = Proof.V82.subgoals pfts in
   if all_goals = [] then
     begin
-      Ide_intf.Message (string_of_ppcmds (
-        let { Evd.it = bgoals ; sigma = sigma } = Proof.V82.background_subgoals pfts in
-        match bgoals with
-          | [] ->
-              let exl = Evarutil.non_instantiated sigma in
-              (str (if exl = [] then "Proof Completed." else
-                      "No more subgoals but non-instantiated existential variables:") ++
-               (fnl ()) ++ (pr_evars_int 1 exl))
-          | _ ->
-              Util.list_fold_left_i
-                (fun i a g ->
-                   a ++ (Printer.pr_concl i sigma g) ++ (spc ())) 1
-                (str "This subproof is complete, but there are still unfocused goals:" ++ (fnl ()))
-                bgoals))
+      let { Evd.it = bgoals ; sigma = sigma } = Proof.V82.background_subgoals pfts in
+      if bgoals = [] then
+        let exl = Evarutil.non_instantiated sigma in
+        if exl = [] then Ide_intf.Proof_completed
+        else
+          let el = List.map (fun evar -> string_of_ppcmds (pr_evar evar)) exl in
+          Ide_intf.Uninstantiated_evars el
+      else Ide_intf.Unfocused_goals (List.map (process_goal sigma) bgoals)
     end
   else
-    begin
-      let process_goal g =
-        let env = Goal.V82.env sigma g in
-        let ccl =
-          let norm_constr = Reductionops.nf_evar sigma (Goal.V82.concl sigma g) in
-          string_of_ppcmds (pr_ltype_env_at_top env norm_constr) in
-        let process_hyp h_env d acc =
-          let d = Term.map_named_declaration (Reductionops.nf_evar sigma) d in
-          (string_of_ppcmds (pr_var_decl h_env d), hyp_next_tac sigma h_env d)::acc in
-        let hyps =
-          List.rev (Environ.fold_named_context process_hyp env ~init:[]) in
-        (hyps,(ccl,concl_next_tac sigma g))
-      in
-      Ide_intf.Goals (List.map process_goal all_goals)
-    end
-  with Proof_global.NoCurrentProof ->
-    Ide_intf.Message "" (* quick hack to have a clean message screen *)
+    Ide_intf.Goals (List.map (process_goal sigma) all_goals)
+  with Proof_global.NoCurrentProof -> Ide_intf.No_current_proof
 
+let hints () =
+  try
+    let pfts = Proof_global.give_me_the_proof () in
+    let { Evd.it = all_goals ; sigma = sigma } = Proof.V82.subgoals pfts in
+    match all_goals with
+    | [] -> None
+    | g :: _ ->
+      let env = Goal.V82.env sigma g in
+      let hint_goal = concl_next_tac sigma g in
+      let get_hint_hyp env d accu = hyp_next_tac sigma env d :: accu in
+      let hint_hyps = List.rev (Environ.fold_named_context get_hint_hyp env ~init: []) in
+      Some (hint_hyps, hint_goal)
+  with Proof_global.NoCurrentProof -> None
 
 (** Other API calls *)
 
@@ -455,16 +462,15 @@ let status () =
   let path =
     let l = Names.repr_dirpath (Lib.cwd ()) in
     let l = snd (Util.list_sep_last l) in
-    if l = [] then "" else
-      (" in "^Names.string_of_dirpath (Names.make_dirpath l))
+    if l = [] then None
+    else Some (Names.string_of_dirpath (Names.make_dirpath l))
   in
   let proof =
     try
-      ", proving " ^ (Names.string_of_id (Pfedit.get_current_proof_name ()))
-    with _ -> ""
+      Some (Names.string_of_id (Pfedit.get_current_proof_name ()))
+    with _ -> None
   in
-  "Ready"^path^proof
-
+  { Ide_intf.status_path = path; Ide_intf.status_proofname = proof }
 
 (** Grouping all call handlers together + error handling *)
 
@@ -492,13 +498,15 @@ let eval_call c =
     Ide_intf.interp = interruptible interp;
     Ide_intf.rewind = interruptible rewind;
     Ide_intf.goals = interruptible goals;
+    Ide_intf.hints = interruptible hints;
     Ide_intf.status = interruptible status;
     Ide_intf.inloadpath = interruptible inloadpath;
-    Ide_intf.mkcases = interruptible Vernacentries.make_cases }
+    Ide_intf.mkcases = interruptible Vernacentries.make_cases;
+    Ide_intf.handle_exn = handle_exn; }
   in
   (* If the messages of last command are still there, we remove them *)
   ignore (read_stdout ());
-  Ide_intf.abstract_eval_call handler handle_exn c
+  Ide_intf.abstract_eval_call handler c
 
 
 (** The main loop *)
@@ -513,6 +521,9 @@ let eval_call c =
 let pr_debug s =
   if !Flags.debug then Printf.eprintf "[pid %d] %s\n%!" (Unix.getpid ()) s
 
+let fail err =
+  Ide_intf.of_value (fun _ -> assert false) (Ide_intf.Fail (None, err))
+
 let loop () =
   let p = Xml_parser.make () in
   let () = Xml_parser.check_eof p false in
@@ -523,21 +534,30 @@ let loop () =
   Lib.mark_end_of_command();
   try
     while true do
-      let xml_query = Xml_parser.parse p (Xml_parser.SChannel stdin) in
-      let q = Ide_intf.to_call xml_query in
-      pr_debug ("<-- " ^ Ide_intf.pr_call q);
-      let r = eval_call q in
-      pr_debug ("--> " ^ Ide_intf.pr_full_value q r);
-      let xml_answer = Ide_intf.of_answer q r in
+      let xml_answer =
+        try
+          let xml_query = Xml_parser.parse p (Xml_parser.SChannel stdin) in
+          let q = Ide_intf.to_call xml_query in
+          let () = pr_debug ("<-- " ^ Ide_intf.pr_call q) in
+          let r = eval_call q in
+          let () = pr_debug ("--> " ^ Ide_intf.pr_full_value q r) in
+          Ide_intf.of_answer q r
+        with
+        | Xml_parser.Error (err, loc) ->
+          let msg = "Syntax error in query: " ^ Xml_parser.error_msg err in
+          fail msg
+        | Ide_intf.Marshal_error ->
+          fail "Incorrect query."
+      in
       Xml_utils.print_xml !orig_stdout xml_answer;
       flush !orig_stdout
     done
   with e ->
     let msg = Printexc.to_string e in
-    let r = Ide_intf.Fail (None, "Fatal exception in coqtop:\n" ^ msg) in
-    pr_debug ("==> " ^ Ide_intf.pr_value r);
+    let r = "Fatal exception in coqtop:\n" ^ msg in
+    pr_debug ("==> " ^ r);
     (try
-      Xml_utils.print_xml !orig_stdout (Ide_intf.of_value (fun _ -> assert false) r);
+      Xml_utils.print_xml !orig_stdout (fail r);
       flush !orig_stdout
     with _ -> ());
     exit 1

@@ -10,11 +10,24 @@
 
 type xml = Xml_parser.xml
 
-type 'a menu = 'a * (string * string) list
+type goal = {
+  goal_hyp : string list;
+  goal_ccl : string;
+}
+
+type status = {
+  status_path : string option;
+  status_proofname : string option;
+}
 
 type goals =
-  | Message of string
-  | Goals of ((string menu) list * string menu) list
+  | No_current_proof
+  | Proof_completed
+  | Unfocused_goals of goal list
+  | Uninstantiated_evars of string list
+  | Goals of goal list
+
+type hint = (string * string) list
 
 type 'a call
 
@@ -43,8 +56,12 @@ val rewind : int -> int call
 (** Fetching the list of current goals *)
 val goals : goals call
 
+(** Retrieving the tactics applicable to the current goal. [None] if there is 
+    no proof in progress. *)
+val hints : (hint list * hint) option call
+
 (** The status, for instance "Ready in SomeSection, proving Foo" *)
-val status : string call
+val status : status call
 
 (** Is a directory part of Coq's loadpath ? *)
 val inloadpath : string -> bool call
@@ -69,14 +86,14 @@ type handler = {
   interp : raw * verbose * string -> string;
   rewind : int -> int;
   goals : unit -> goals;
-  status : unit -> string;
+  hints : unit -> (hint list * hint) option;
+  status : unit -> status;
   inloadpath : string -> bool;
   mkcases : string -> string list list;
+  handle_exn : exn -> location * string;
 }
 
-val abstract_eval_call :
-  handler -> (exn -> location * string) ->
-  'a call -> 'a value
+val abstract_eval_call : handler -> 'a call -> 'a value
 
 (** * XML data marshalling *)
 

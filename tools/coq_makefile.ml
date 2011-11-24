@@ -68,7 +68,9 @@ coq_makefile [subdirectory] .... [file.v] ... [file.ml[i4]?] ... [file.mllib]
 [-byte]: compile with byte-code version of coq
 [-opt]: compile with native-code version of coq
 [-arg opt]: send option \"opt\" to coqc
-[-no-install]: build a makefile with no install target
+[-install opt]: where opt is \"user\" to install into user directory,
+  \"none\" to build a makefile with no install target or
+  \"global\" to install in $COQLIB directory (default behavior)
 [-f file]: take the contents of file as arguments
 [-o file]: output should go in file file
 	Output file outside the current directory is forbidden.
@@ -132,7 +134,7 @@ let classify_files_by_root var files (inc_i,inc_r) =
 	  inc_r;
     end
 
-let install_include_by_root path_var files_var files (inc_i,inc_r) =
+let install_include_by_root files_var files (inc_i,inc_r) =
   try
     (* All files caught by a -R . option (assuming it is the only one) *)
     let ldir = match inc_r with
@@ -142,8 +144,8 @@ let install_include_by_root path_var files_var files (inc_i,inc_r) =
 	   out in
     let pdir = physical_dir_of_logical_dir ldir in
       printf "\tfor i in $(%s); do \\\n" files_var;
-      printf "\t install -d `dirname $(DSTROOT)$(%s)user-contrib/%s/$$i`; \\\n" path_var pdir;
-      printf "\t install $$i $(DSTROOT)$(%s)user-contrib/%s/$$i; \\\n" path_var pdir;
+      printf "\t install -d `dirname $(DSTROOT)$(COQLIBINSTALL)/%s/$$i`; \\\n" pdir;
+      printf "\t install -m 0644 $$i $(DSTROOT)$(COQLIBINSTALL)/%s/$$i; \\\n" pdir;
       printf "\tdone\n"
   with Not_found ->
     let absdir_of_files = List.rev_map
@@ -152,9 +154,9 @@ let install_include_by_root path_var files_var files (inc_i,inc_r) =
     let has_inc_i_files =
       List.exists (fun (_,a) -> List.mem a absdir_of_files) inc_i in
     let install_inc_i d =
-      printf "\tinstall -d $(DSTROOT)$(%s)user-contrib/%s; \\\n" path_var d;
+      printf "\tinstall -d $(DSTROOT)$(COQLIBINSTALL)/%s; \\\n" d;
       printf "\tfor i in $(%sINC); do \\\n" files_var;
-      printf "\t install $$i $(DSTROOT)$(%s)user-contrib/%s/`basename $$i`; \\\n" path_var d;
+      printf "\t install -m 0644 $$i $(DSTROOT)$(COQLIBINSTALL)/%s/`basename $$i`; \\\n" d;
       printf "\tdone\n"
     in
       if inc_r = [] then
@@ -171,8 +173,8 @@ let install_include_by_root path_var files_var files (inc_i,inc_r) =
 			 if has_inc_r_files then
 			   begin
 			     printf "\tcd %s; for i in $(%s%d); do \\\n" pdir files_var i;
-			     printf "\t install -d `dirname $(DSTROOT)$(%s)user-contrib/%s/$$i`; \\\n" path_var pdir';
-			     printf "\t install $$i $(DSTROOT)$(%s)user-contrib/%s/$$i; \\\n" path_var pdir';
+			     printf "\t install -d `dirname $(DSTROOT)$(COQLIBINSTALL)/%s/$$i`; \\\n" pdir';
+			     printf "\t install -m 0644 $$i $(DSTROOT)$(COQLIBINSTALL)/%s/$$i; \\\n" pdir';
 			     printf "\tdone\n";
 			   end;
 			 if has_inc_i_files then install_inc_i pdir'
@@ -180,9 +182,9 @@ let install_include_by_root path_var files_var files (inc_i,inc_r) =
 
 let install_doc some_vfiles some_mlifiles (_,inc_r) =
   let install_one_kind kind dir =
-    printf "\tinstall -d $(DSTROOT)$(DOCDIR)user-contrib/%s/%s\n" dir kind;
+    printf "\tinstall -d $(DSTROOT)$(COQDOCINSTALL)/%s/%s\n" dir kind;
     printf "\tfor i in %s/*; do \\\n" kind;
-    printf "\t install $$i $(DSTROOT)$(DOCDIR)user-contrib/%s/$$i;\\\n" dir;
+    printf "\t install -m 0644 $$i $(DSTROOT)$(COQDOCINSTALL)/%s/$$i;\\\n" dir;
     print "\tdone\n" in
     print "install-doc:\n";
     let () = match inc_r with
@@ -212,19 +214,19 @@ let install (vfiles,(mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles),_,sds) in
   let cmxsfiles = cmofiles@mllibfiles in
     if (not_empty cmxsfiles) then begin
       print "install-natdynlink:\n";
-      install_include_by_root "COQLIB" "CMXSFILES" cmxsfiles inc;
+      install_include_by_root "CMXSFILES" cmxsfiles inc;
       print "\n";
     end;
     print "install:";
     if (not_empty cmxsfiles) then print "$(if ifeq '$(HASNATDYNLINK)' 'true',install-natdynlink)";
     print "\n";
-    if not_empty vfiles then install_include_by_root "COQLIB" "VOFILES" vfiles inc;
+    if not_empty vfiles then install_include_by_root "VOFILES" vfiles inc;
     if (not_empty cmofiles) then
-      install_include_by_root "COQLIB" "CMOFILES" cmofiles inc;
+      install_include_by_root "CMOFILES" cmofiles inc;
     if (not_empty cmifiles) then
-      install_include_by_root "COQLIB" "CMIFILES" cmifiles inc;
+      install_include_by_root "CMIFILES" cmifiles inc;
     if (not_empty mllibfiles) then
-      install_include_by_root "COQLIB" "CMAFILES" mllibfiles inc;
+      install_include_by_root "CMAFILES" mllibfiles inc;
     List.iter
       (fun x ->
 	 printf "\t(cd %s; $(MAKE) DSTROOT=$(DSTROOT) INSTALLDEFAULTROOT=$(INSTALLDEFAULTROOT)/%s install)\n" x x)
@@ -322,7 +324,7 @@ in
     if !some_mlpackfile then mlpack_rules ();
     if !some_vfile then v_rules ()
 
-let variables opt (args,defs) =
+let variables is_install opt (args,defs) =
   let var_aux (v,def) = print v; print "="; print def; print "\n" in
     section "Variables definitions.";
     List.iter var_aux defs;
@@ -355,7 +357,20 @@ let variables opt (args,defs) =
     print "CAMLP4EXTEND?=pa_extend.cmo pa_macro.cmo q_MLast.cmo\n";
     print "CAMLP4OPTIONS?=\n";
     print "PP?=-pp \"$(CAMLP4BIN)$(CAMLP4)o -I $(CAMLLIB) -I . $(COQSRCLIBS) $(CAMLP4EXTEND) $(GRAMMARS) $(CAMLP4OPTIONS) -impl\"\n";
-    print "\n"
+    print "\n";
+    match is_install with
+      | Project_file.NoInstall -> ()
+      | Project_file.TraditionalInstall ->
+          section "Install Paths";
+          print "COQLIBINSTALL=${COQLIB}/user-contrib\n";
+          print "COQDOCINSTALL=${DOCDIR}/user-contrib\n";
+          print "\n"
+      | Project_file.UserInstall ->
+          section "Install Paths";
+          print "XDG_DATA_HOME?=$(HOME)/.local/share\n";
+          print "COQLIBINSTALL=$(XDG_DATA_HOME)/coq\n";
+          print "COQDOCINSTALL=$(XDG_DATA_HOME)/doc/coq\n";
+          print "\n"
 
 let parameters () =
   print "NOARG: all\n\n# \n";
@@ -612,7 +627,7 @@ let do_makefile args =
     |[] -> var := false
     |_::_ -> var := true in
   let (project_file,makefile,is_install,opt),l =
-    try Project_file.process_cmd_line Filename.current_dir_name (None,None,true,true) [] args
+    try Project_file.process_cmd_line Filename.current_dir_name (None,None,Project_file.TraditionalInstall,true) [] args
     with Project_file.Parsing_error -> usage () in
   let (v_f,(mli_f,ml4_f,ml_f,mllib_f,mlpack_f),sps,sds as targets), inc, defs =
     Project_file.split_arguments l in
@@ -636,7 +651,7 @@ let do_makefile args =
     List.iter check_dep (Str.split (Str.regexp "[ \t]+") dependencies)) sps;
 
   let inc = ensure_root_dir targets inc in
-  if is_install then warn_install_at_root_directory targets inc;
+  if is_install <> Project_file.NoInstall then warn_install_at_root_directory targets inc;
   check_overlapping_include inc;
   banner ();
   header_includes ();
@@ -644,11 +659,11 @@ let do_makefile args =
   command_line args;
   parameters ();
   include_dirs inc;
-  variables opt defs;
+  variables is_install opt defs;
   all_target targets inc;
   implicit ();
   standard opt;
-  if is_install then install targets inc;
+  if is_install <> Project_file.NoInstall then install targets inc;
   clean sds sps;
   make_makefile sds;
   warning ();

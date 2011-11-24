@@ -246,6 +246,10 @@ let compute_auto_implicits env flags enriching t =
   if enriching then compute_implicits_flags env flags true t
   else compute_implicits_gen false false false true true env t
 
+let compute_implicits_names env t =
+  let _, impls = compute_implicits_gen false false false false true env t in
+  List.map fst impls
+
 (* Extra information about implicit arguments *)
 
 type maximal_insertion = bool (* true = maximal contextual insertion *)
@@ -453,7 +457,17 @@ type implicit_discharge_request =
 let implicits_table = ref Refmap.empty
 
 let implicits_of_global ref =
-  try Refmap.find ref !implicits_table with Not_found -> [DefaultImpArgs,[]]
+  try
+    let l = Refmap.find ref !implicits_table in
+    try
+      let rename_l = Arguments_renaming.arguments_names ref in
+      let rename imp name = match imp, name with
+       | Some (_, x,y), Name id -> Some (id, x,y)
+       | _ -> imp in
+      List.map2 (fun (t, il) rl -> t, List.map2 rename il rl) l rename_l
+    with Not_found -> l
+    | Invalid_argument _ -> anomaly "renaming implicits"
+  with Not_found -> [DefaultImpArgs,[]]
 
 let cache_implicits_decl (ref,imps) =
   implicits_table := Refmap.add ref imps !implicits_table

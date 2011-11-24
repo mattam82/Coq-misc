@@ -119,6 +119,11 @@ let print_impargs_list prefix l =
 	    then print_one_impargs_list imps
 	    else [str "No implicit arguments"]))])]) l)
 
+let print_renames_list prefix l =
+  if l = [] then [prefix] else
+  [add_colon prefix ++ str "Arguments are renamed to " ++
+    hv 2 (prlist_with_sep pr_comma (fun x -> x) (List.map pr_name l))]
+
 let need_expansion impl ref =
   let typ = Global.type_of_global ref in
   let ctx = (prod_assum typ) in
@@ -150,6 +155,45 @@ let print_argument_scopes prefix = function
       prlist_with_sep spc (function Some sc -> str sc | None -> str "_") l ++
       str "]")]
   | _  -> []
+
+(*****************************)
+(** Printing simpl behaviour *)
+
+let print_simpl_behaviour ref =
+  match Tacred.get_simpl_behaviour ref with
+  | None -> []
+  | Some (recargs, nargs, flags) ->
+     let never = List.mem `SimplNeverUnfold flags in
+     let nomatch = List.mem `SimplDontExposeCase flags in
+     let pp_nomatch = spc() ++ if nomatch then
+       str "avoiding to expose match constructs" else str"" in
+     let pp_recargs = spc() ++ str "when the " ++
+       let rec aux = function
+         | [] -> mt()
+         | [x] -> str (ordinal (x+1))
+         | [x;y] -> str (ordinal (x+1)) ++ str " and " ++ str (ordinal (y+1))
+         | x::tl -> str (ordinal (x+1)) ++ str ", " ++ aux tl in
+       aux recargs ++ str (plural (List.length recargs) " argument") ++
+       str (plural (if List.length recargs >= 2 then 1 else 2) " evaluate") ++
+       str " to a constructor" in
+     let pp_nargs =
+       spc() ++ str "when applied to " ++ int nargs ++
+       str (plural nargs " argument") in
+     [hov 2 (str "The simpl tactic " ++
+     match recargs, nargs, never with
+     | _,_, true -> str "never unfolds " ++ pr_global ref
+     | [], 0, _ -> str "always unfolds " ++ pr_global ref
+     | _::_, n, _ when n < 0 ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++ pp_nomatch
+     | _::_, n, _ when n > List.fold_left max 0 recargs ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++
+        str " and" ++ pp_nargs ++ pp_nomatch
+     | _::_, _, _ ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++ pp_nomatch
+     | [], n, _ when n > 0 ->
+        str "unfolds " ++ pr_global ref ++ pp_nargs ++ pp_nomatch
+     | _ -> str "unfolds " ++ pr_global ref ++ pp_nomatch )]
+;;
 
 (*********************)
 (** Printing Opacity *)
@@ -192,6 +236,8 @@ let print_opacity ref =
 let print_name_infos ref =
   let impls = implicits_of_global ref in
   let scopes = Notation.find_arguments_scope ref in
+  let renames =
+    try List.hd (Arguments_renaming.arguments_names ref) with Not_found -> [] in
   let type_info_for_implicit =
     if need_expansion (select_impargs_size 0 impls) ref then
       (* Need to reduce since implicits are computed with products flattened *)
@@ -200,6 +246,7 @@ let print_name_infos ref =
     else
       [] in
   type_info_for_implicit @
+  print_renames_list (mt()) renames @
   print_impargs_list (mt()) impls @
   print_argument_scopes (mt()) scopes
 
@@ -223,6 +270,12 @@ let print_inductive_implicit_args =
   print_args_data_of_inductive_ids
     implicits_of_global (fun l -> positions_of_implicits l <> [])
     print_impargs_list
+
+let print_inductive_renames =
+  print_args_data_of_inductive_ids
+    (fun r -> try List.hd (Arguments_renaming.arguments_names r) with _ -> [])
+    ((<>) Anonymous)
+    print_renames_list
 
 let print_inductive_argument_scopes =
   print_args_data_of_inductive_ids
@@ -341,7 +394,8 @@ let gallina_print_inductive sp =
   let mipv = mib.mind_packets in
   pr_mutual_inductive_body env sp mib ++ fnl () ++
   with_line_skip
-    (print_inductive_implicit_args sp mipv @
+    (print_inductive_renames sp mipv @
+     print_inductive_implicit_args sp mipv @
      print_inductive_argument_scopes sp mipv)
 
 let print_named_decl id =
@@ -625,6 +679,7 @@ let print_about_any k =
       pr_infos_list
        ([print_ref false ref; blankline] @
 	print_name_infos ref @
+	print_simpl_behaviour ref @
 	print_opacity ref @
 	[hov 0 (str "Expands to: " ++ pr_located_qualid k)])
   | Syntactic kn ->

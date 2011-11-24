@@ -14,9 +14,24 @@ type xml = Xml_parser.xml
 
 type 'a menu = 'a * (string * string) list
 
+type status = {
+  status_path : string option;
+  status_proofname : string option;
+}
+
+type goal = {
+  goal_hyp : string list;
+  goal_ccl : string;
+}
+
 type goals =
-  | Message of string
-  | Goals of ((string menu) list * string menu) list
+  | No_current_proof
+  | Proof_completed
+  | Unfocused_goals of goal list
+  | Uninstantiated_evars of string list
+  | Goals of goal list
+
+type hint = (string * string) list
 
 (** We use phantom types and GADT to protect ourselves against wild casts *)
 
@@ -27,6 +42,7 @@ type 'a call =
   | Interp of raw * verbose * string
   | Rewind of int
   | Goal
+  | Hints
   | Status
   | InLoadPath of string
   | MkCases of string
@@ -34,7 +50,8 @@ type 'a call =
 let interp (r,b,s) : string call = Interp (r,b,s)
 let rewind i : int call = Rewind i
 let goals : goals call = Goal
-let status : string call = Status
+let hints : (hint list * hint) option call = Hints
+let status : status call = Status
 let inloadpath s : bool call = InLoadPath s
 let mkcases s : string list list call = MkCases s
 
@@ -50,23 +67,26 @@ type handler = {
   interp : raw * verbose * string -> string;
   rewind : int -> int;
   goals : unit -> goals;
-  status : unit -> string;
+  hints : unit -> (hint list * hint) option;
+  status : unit -> status;
   inloadpath : string -> bool;
   mkcases : string -> string list list;
+  handle_exn : exn -> location * string;
 }
 
-let abstract_eval_call handler explain_exn c =
+let abstract_eval_call handler c =
   try
     let res = match c with
       | Interp (r,b,s) -> Obj.magic (handler.interp (r,b,s))
       | Rewind i -> Obj.magic (handler.rewind i)
       | Goal -> Obj.magic (handler.goals ())
+      | Hints -> Obj.magic (handler.hints ())
       | Status -> Obj.magic (handler.status ())
       | InLoadPath s -> Obj.magic (handler.inloadpath s)
       | MkCases s -> Obj.magic (handler.mkcases s)
     in Good res
   with e ->
-    let (l,str) = explain_exn e in
+    let (l, str) = handler.handle_exn e in
     Fail (l,str)
 
 (** * XML data marshalling *)
@@ -148,6 +168,8 @@ let of_call = function
   Element ("call", ("val", "rewind") :: ["steps", string_of_int n], [])
 | Goal ->
   Element ("call", ["val", "goal"], [])
+| Hints ->
+  Element ("call", ["val", "hints"], [])
 | Status ->
   Element ("call", ["val", "status"], [])
 | InLoadPath file ->
@@ -170,8 +192,18 @@ let to_call = function
   | "status" -> Status
   | "inloadpath" -> InLoadPath (raw_string l)
   | "mkcases" -> MkCases (raw_string l)
+  | "hints" -> Hints
   | _ -> raise Marshal_error
   end
+| _ -> raise Marshal_error
+
+let of_option f = function
+| None -> Element ("option", ["val", "none"], [])
+| Some x -> Element ("option", ["val", "some"], [f x])
+
+let to_option f = function
+| Element ("option", ["val", "none"], []) -> None
+| Element ("option", ["val", "some"], [x]) -> Some (f x)
 | _ -> raise Marshal_error
 
 let of_string s = Element ("string", [], [PCData s])
@@ -192,28 +224,72 @@ let to_pair f g = function
 | Element ("pair", [], [x; y]) -> (f x, g y)
 | _ -> raise Marshal_error
 
+let of_status s =
+  let of_so = of_option of_string in
+  Element ("status", [], [of_so s.status_path; of_so s.status_proofname])
+
+let to_status = function
+| Element ("status", [], [path; name]) ->
+  {
+    status_path = to_option to_string path;
+    status_proofname = to_option to_string name;
+  }
+| _ -> raise Marshal_error
+
+let of_goal g =
+  let hyp = of_list of_string g.goal_hyp in
+  let ccl = of_string g.goal_ccl in
+  Element ("goal", [], [hyp; ccl])
+
+let to_goal = function
+| Element ("goal", [], [hyp; ccl]) ->
+  let hyp = to_list to_string hyp in
+  let ccl = to_string ccl in
+  { goal_hyp = hyp; goal_ccl = ccl }
+| _ -> raise Marshal_error
+
 let of_goals = function
-| Message s ->
-  Element ("goals", ["val", "message"], [PCData s])
+| No_current_proof ->
+  Element ("goals", ["val", "no_current_proof"], [])
+| Proof_completed ->
+  Element ("goals", ["val", "proof_completed"], [])
+| Unfocused_goals l ->
+  let xml = of_list of_goal l in
+  Element ("goals", ["val", "unfocused_goals"], [xml])
+| Uninstantiated_evars el ->
+  let xml = of_list of_string el in
+  Element ("goals", ["val", "uninstantiated_evars"], [xml])
 | Goals l ->
-  let of_string_menu = of_pair of_string (of_list (of_pair of_string of_string)) in
-  let xml = of_list (of_pair (of_list of_string_menu) of_string_menu) l in
+  let xml = of_list of_goal l in
   Element ("goals", ["val", "goals"], [xml])
 
 let to_goals = function
-| Element ("goals", ["val", "message"], l) -> Message (raw_string l)
+| Element ("goals", ["val", "no_current_proof"], []) ->
+  No_current_proof
+| Element ("goals", ["val", "proof_completed"], []) ->
+  Proof_completed
+| Element ("goals", ["val", "unfocused_goals"], [xml]) ->
+  let l = to_list to_goal xml in
+  Unfocused_goals l
+| Element ("goals", ["val", "uninstantiated_evars"], [xml]) ->
+  let l = to_list to_string xml in
+  Uninstantiated_evars l
 | Element ("goals", ["val", "goals"], [xml]) ->
-  let to_string_menu = to_pair to_string (to_list (to_pair to_string to_string)) in
-  let ans = to_list (to_pair (to_list to_string_menu) to_string_menu) xml in
-  Goals ans
+  let l = to_list to_goal xml in
+  Goals l
 | _ -> raise Marshal_error
+
+let of_hints =
+  let of_hint = of_list (of_pair of_string of_string) in
+  of_option (of_pair (of_list of_hint) of_hint)
 
 let of_answer (q : 'a call) (r : 'a value) =
   let convert = match q with
   | Interp _ -> Obj.magic (of_string : string -> xml)
   | Rewind _ -> Obj.magic (of_int : int -> xml)
   | Goal -> Obj.magic (of_goals : goals -> xml)
-  | Status -> Obj.magic (of_string : string -> xml)
+  | Hints -> Obj.magic (of_hints : (hint list * hint) option -> xml)
+  | Status -> Obj.magic (of_status : status -> xml)
   | InLoadPath _ -> Obj.magic (of_bool : bool -> xml)
   | MkCases _ -> Obj.magic (of_list (of_list of_string) : string list list -> xml)
   in
@@ -226,8 +302,11 @@ let to_answer xml =
     | "string" -> Obj.magic (to_string elt)
     | "int" -> Obj.magic (to_int elt)
     | "goals" -> Obj.magic (to_goals elt)
+    | "status" -> Obj.magic (to_status elt)
     | "bool" -> Obj.magic (to_bool elt)
     | "list" -> Obj.magic (to_list convert elt)
+    | "option" -> Obj.magic (to_option convert elt)
+    | "pair" -> Obj.magic (to_pair convert convert elt)
     | _ -> raise Marshal_error
     end
   | _ -> raise Marshal_error
@@ -243,6 +322,7 @@ let pr_call = function
     "INTERP"^raw^verb^" ["^s^"]"
   | Rewind i -> "REWIND "^(string_of_int i)
   | Goal -> "GOALS"
+  | Hints -> "HINTS"
   | Status -> "STATUS"
   | InLoadPath s -> "INLOADPATH "^s
   | MkCases s -> "MKCASES "^s
@@ -256,24 +336,39 @@ let pr_value v = pr_value_gen (fun _ -> "") v
 let pr_string s = "["^s^"]"
 let pr_bool b = if b then "true" else "false"
 
+let pr_status s =
+  let path = match s.status_path with
+  | None -> "no path; "
+  | Some p -> "path = " ^ p ^ "; "
+  in
+  let name = match s.status_proofname with
+  | None -> "no proof;"
+  | Some n -> "proof = " ^ n ^ ";"
+  in
+  "Status: " ^ path ^ name
+
 let pr_mkcases l =
   let l = List.map (String.concat " ") l in
   "[" ^ String.concat " | " l ^ "]"
 
 let pr_goals = function
-| Message s -> "Message: " ^ s
+| No_current_proof -> "No current proof."
+| Proof_completed -> "Proof completed."
+| Unfocused_goals gl -> Printf.sprintf "Still %i unfocused goals." (List.length gl)
+| Uninstantiated_evars el -> Printf.sprintf "Still %i uninstantiated evars." (List.length el)
 | Goals gl ->
-  let pr_menu (s, _) = s in
-  let pr_goal (hyps, goal) =
+  let pr_menu s = s in
+  let pr_goal { goal_hyp = hyps; goal_ccl = goal } =
     "[" ^ String.concat "; " (List.map pr_menu hyps) ^ " |- " ^ pr_menu goal ^ "]"
   in
   String.concat " " (List.map pr_goal gl)
 
 let pr_full_value call value =
   match call with
-    | Interp _ -> pr_value_gen pr_string (Obj.magic value)
-    | Rewind i -> pr_value_gen string_of_int (Obj.magic value)
-    | Goal -> pr_value_gen pr_goals (Obj.magic value)
-    | Status -> pr_value_gen pr_string (Obj.magic value)
-    | InLoadPath s -> pr_value_gen pr_bool (Obj.magic value)
-    | MkCases s -> pr_value_gen pr_mkcases (Obj.magic value)
+    | Interp _ -> pr_value_gen pr_string (Obj.magic value : string value)
+    | Rewind i -> pr_value_gen string_of_int (Obj.magic value : int value)
+    | Goal -> pr_value_gen pr_goals (Obj.magic value : goals value)
+    | Hints -> pr_value value
+    | Status -> pr_value_gen pr_status (Obj.magic value : status value)
+    | InLoadPath s -> pr_value_gen pr_bool (Obj.magic value : bool value)
+    | MkCases s -> pr_value_gen pr_mkcases (Obj.magic value : string list list value)

@@ -15,13 +15,13 @@ let (/) = Filename.concat
 let set_debug () = Flags.debug := true
 
 (* Loading of the ressource file.
-   rcfile is either $HOME/.coqrc.VERSION, or $HOME/.coqrc if the first one
+   rcfile is either $XDG_CONFIG_HOME/.coqrc.VERSION, or $XDG_CONFIG_HOME/.coqrc if the first one
   does not exist. *)
 
-let rcfile = ref (home/".coqrc")
+let rcdefaultname = "coqrc"
+let rcfile = ref ""
 let rcfile_specified = ref false
 let set_rcfile s = rcfile := s; rcfile_specified := true
-let set_rcuser s = rcfile := ("~"^s)/".coqrc"
 
 let load_rc = ref true
 let no_load_rc () = load_rc := false
@@ -33,14 +33,17 @@ let load_rcfile() =
         if file_readable_p !rcfile then
           Vernac.load_vernac false !rcfile
         else raise (Sys_error ("Cannot read rcfile: "^ !rcfile))
-      else if file_readable_p (!rcfile^"."^Coq_config.version) then
-        Vernac.load_vernac false (!rcfile^"."^Coq_config.version)
-      else if file_readable_p !rcfile then
-        Vernac.load_vernac false !rcfile
-      else ()
+      else try let inferedrc = List.find file_readable_p [
+	Envars.xdg_config_home/rcdefaultname^"."^Coq_config.version;
+	Envars.xdg_config_home/rcdefaultname;
+	System.home/"."^rcdefaultname^"."^Coq_config.version;
+	System.home/"."^rcdefaultname;
+      ] in
+        Vernac.load_vernac false inferedrc
+	with Not_found -> ()
 	(*
 	Flags.if_verbose
-	  mSGNL (str ("No .coqrc or .coqrc."^Coq_config.version^
+	  mSGNL (str ("No coqrc or coqrc."^Coq_config.version^
 			 " found. Skipping rcfile loading."))
 	*)
     with e ->
@@ -91,7 +94,8 @@ let theories_dirs_map = [
 let init_load_path () =
   let coqlib = Envars.coqlib () in
   let user_contrib = coqlib/"user-contrib" in
-  let coqpath = Envars.coqpath () in
+  let xdg_dirs = Envars.xdg_dirs in
+  let coqpath = Envars.coqpath in
   let dirs = ["states";"plugins"] in
     (* NOTE: These directories are searched from last to first *)
     (* first, developer specific directory to open *)
@@ -105,6 +109,8 @@ let init_load_path () =
     (* then user-contrib *)
     if Sys.file_exists user_contrib then
       Mltop.add_rec_path ~unix_path:user_contrib ~coq_root:Nameops.default_root_prefix;
+    (* then directories in XDG_DATA_DIRS and XDG_DATA_HOME *)
+    List.iter (fun s -> Mltop.add_rec_path ~unix_path:s ~coq_root:Nameops.default_root_prefix) xdg_dirs;
     (* then directories in COQPATH *)
     List.iter (fun s -> Mltop.add_rec_path ~unix_path:s ~coq_root:Nameops.default_root_prefix) coqpath;
     (* then current directory *)
