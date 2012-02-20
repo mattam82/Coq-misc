@@ -65,6 +65,11 @@ val eq_constr : constr -> constr -> bool
 
 type types = constr
 
+type relevance = Expl | Irr
+type implicit = bool
+type 'a binder_annot = 'a * (relevance * implicit)
+type 'a letbinder_annot = 'a * relevance
+
 (** {5 Functions for dealing with constr terms. }
   The following functions are intended to simplify and to uniform the
   manipulation of terms. Some of these functions may be overlapped with
@@ -101,6 +106,7 @@ val mkCast : constr * cast_kind * constr -> constr
 
 (** Constructs the product [(x:t1)t2] *)
 val mkProd : name * types * types -> types
+val mkFullProd : name binder_annot * types * types -> types
 val mkNamedProd : identifier -> types -> types -> types
 
 (** non-dependent product [t1 -> t2], an alias for
@@ -111,15 +117,18 @@ val mkArrow : types -> types -> constr
 
 (** Constructs the abstraction \[x:t{_ 1}\]t{_ 2} *)
 val mkLambda : name * types * constr -> constr
+val mkFullLambda : name binder_annot * types * constr -> constr
 val mkNamedLambda : identifier -> types -> constr -> constr
 
 (** Constructs the product [let x = t1 : t2 in t3] *)
 val mkLetIn : name * constr * types * constr -> constr
+val mkFullLetIn : name letbinder_annot * constr * types * constr -> constr
 val mkNamedLetIn : identifier -> constr -> types -> constr -> constr
 
 (** [mkApp (f,[| t_1; ...; t_n |]] constructs the application
    {% $(f~t_1~\dots~t_n)$ %}. *)
 val mkApp : constr * constr array -> constr
+val mkFullApp : constr * (relevance * relevance array) * constr array -> constr
 
 (** Constructs a constant 
    The array of terms correspond to the variables introduced in the section *)
@@ -191,6 +200,26 @@ type ('constr, 'types) pfixpoint =
     (int array * int) * ('constr, 'types) prec_declaration
 type ('constr, 'types) pcofixpoint =
     int * ('constr, 'types) prec_declaration
+
+type ('constr, 'types) full_kind_of_term =
+  | Rel       of int
+  | Var       of identifier
+  | Meta      of metavariable
+  | Evar      of 'constr pexistential
+  | Sort      of sorts
+  | Cast      of 'constr * cast_kind * 'types
+  | Prod      of name binder_annot * 'types * 'types
+  | Lambda    of name binder_annot * 'types * 'constr
+  | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
+  | App       of 'constr * (relevance * relevance array) * 'constr array
+  | Const     of constant
+  | Ind       of inductive
+  | Construct of constructor
+  | Case      of case_info * 'constr * 'constr * 'constr array
+  | Fix       of ('constr, 'types) pfixpoint
+  | CoFix     of ('constr, 'types) pcofixpoint
+
+val full_kind_of_term : constr -> (constr, types) full_kind_of_term
 
 type ('constr, 'types) kind_of_term =
   | Rel       of int
@@ -287,6 +316,8 @@ val destLetIn : constr -> name * constr * types * constr
 (** Destructs an application *)
 val destApp : constr -> constr * constr array
 
+val destFullApp : constr -> constr * (relevance * relevance array) * constr array
+
 (** Obsolete synonym of destApp *)
 val destApplication : constr -> constr * constr array
 
@@ -332,8 +363,12 @@ val destCoFix : constr -> cofixpoint
     (in the latter case, [na] is of type [name] but just for printing
     purpose) *)
 
-type named_declaration = identifier * constr option * types
-type rel_declaration = name * constr option * types
+type body = 
+  | Variable of implicit * relevance
+  | Definition of relevance * constr
+
+type named_declaration = identifier * body * types
+type rel_declaration = name * body * types
 
 val map_named_declaration :
   (constr -> constr) -> named_declaration -> named_declaration

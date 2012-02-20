@@ -83,19 +83,30 @@ type ('constr, 'types) pfixpoint =
 type ('constr, 'types) pcofixpoint =
     int * ('constr, 'types) prec_declaration
 
+type relevance = Expl | Irr
+
+type implicit = bool
+
+type 'a binder_annot = 'a * (relevance * implicit)
+type 'a letbinder_annot = 'a * relevance
+
+let name_of (name, annot) = name
+let merge_rel i i' =
+  if i = Irr || i' = Irr then Irr else Expl
+
 (* [Var] is used for named variables and [Rel] for variables as
    de Bruijn indices. *)
-type ('constr, 'types) kind_of_term =
+type ('constr, 'types) full_kind_of_term =
   | Rel       of int
   | Var       of identifier
   | Meta      of metavariable
   | Evar      of 'constr pexistential
   | Sort      of sorts
   | Cast      of 'constr * cast_kind * 'types
-  | Prod      of name * 'types * 'types
-  | Lambda    of name * 'types * 'constr
-  | LetIn     of name * 'constr * 'types * 'constr
-  | App       of 'constr * 'constr array
+  | Prod      of name binder_annot * 'types * 'types
+  | Lambda    of name binder_annot * 'types * 'constr
+  | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
+  | App       of 'constr * (relevance * relevance array) * 'constr array
   | Const     of constant
   | Ind       of inductive
   | Construct of constructor
@@ -105,13 +116,16 @@ type ('constr, 'types) kind_of_term =
 
 (* constr is the fixpoint of the previous type. Requires option
    -rectypes of the Caml compiler to be set *)
-type constr = (constr,constr) kind_of_term
+type constr = (constr,constr) full_kind_of_term
 
 type existential = existential_key * constr array
 type rec_declaration = name array * constr array * constr array
 type fixpoint = (int array * int) * rec_declaration
 type cofixpoint = int * rec_declaration
 
+type body =
+  | Variable of (relevance * implicit)
+  | Definition of relevance * constr
 
 (*********************)
 (* Term constructors *)
@@ -140,23 +154,38 @@ let mkCast (t1,k2,t2) =
   | Cast (c,k1, _) when k1 = VMcast & k1 = k2 -> Cast (c,k1,t2)
   | _ -> Cast (t1,k2,t2)
 
+let from_name na = (na, (Expl, false))
+let named id = from_name (Name id)
+let letfrom_name na = (na, Expl)
+let letnamed id = letfrom_name (Name id)
+let anon = from_name Anonymous
+
 (* Constructs the product (x:t1)t2 *)
-let mkProd (x,t1,t2) = Prod (x,t1,t2)
+let mkFullProd (annot,typ,c) = Prod (annot,typ,c)
+let mkProd (x,t1,t2) = mkFullProd (from_name x,t1,t2)
 
 (* Constructs the abstraction [x:t1]t2 *)
-let mkLambda (x,t1,t2) = Lambda (x,t1,t2)
+let mkFullLambda (x,t1,t2) = Lambda (x,t1,t2)
+let mkLambda (x,t1,t2) = mkFullLambda (from_name x,t1,t2)
 
 (* Constructs [x=c_1:t]c_2 *)
-let mkLetIn (x,c1,t,c2) = LetIn (x,c1,t,c2)
+let mkFullLetIn (x,ct,t,c2) = LetIn (x,ct,t,c2)
+let mkLetIn (x,c1,t,c2) = mkFullLetIn (letfrom_name x,c1,t,c2)
 
 (* If lt = [t1; ...; tn], constructs the application (t1 ... tn) *)
 (* We ensure applicative terms have at least one argument and the
    function is not itself an applicative term *)
-let mkApp (f, a) =
+let mkFullApp (f, (r, ra), a) =
   if Array.length a = 0 then f else
     match f with
-      | App (g, cl) -> App (g, Array.append cl a)
-      | _ -> App (f, a)
+    | App (g, (gi, r'), cl) -> 
+	App (g, (merge_rel gi r, Array.append r' ra), Array.append cl a)
+    | _ -> App (f, (r, ra), a)
+
+let mkApp (f, a) =
+  if Array.length a = 0 then f else
+    let r = Array.make (Array.length a) Expl in
+      mkFullApp (f, (Expl, r), a)
 
 (* Constructs a constant *)
 let mkConst c = Const c
@@ -227,6 +256,7 @@ let mkVar id = Var id
    term *)
 
 let kind_of_term c = c
+let full_kind_of_term c = c
 
 (* Experimental, used in Presburger contrib *)
 type ('constr, 'types) kind_of_type =
@@ -239,9 +269,9 @@ type ('constr, 'types) kind_of_type =
 let kind_of_type = function
   | Sort s -> SortType s
   | Cast (c,_,t) -> CastType (c, t)
-  | Prod (na,t,c) -> ProdType (na, t, c)
-  | LetIn (na,b,t,c) -> LetInType (na, b, t, c)
-  | App (c,l) -> AtomicType (c, l)
+  | Prod (na,t,c) -> ProdType (name_of na, t, c)
+  | LetIn (na,b,t,c) -> LetInType (name_of na, b, t, c)
+  | App (c,_,l) -> AtomicType (c, l)
   | (Rel _ | Meta _ | Var _ | Evar _ | Const _ | Case _ | Fix _ | CoFix _ | Ind _ as c)
     -> AtomicType (c,[||])
   | (Lambda _ | Construct _) -> failwith "Not a type"
@@ -353,7 +383,11 @@ let isLetIn c =  match kind_of_term c with LetIn _ -> true | _ -> false
 
 (* Destructs an application *)
 let destApp c = match kind_of_term c with
-  | App (f,a) -> (f, a)
+  | App (f, _, a) -> (f, a)
+  | _ -> invalid_arg "destApplication"
+
+let destFullApp c = match kind_of_term c with
+  | App (f, r, a) -> (f, r, a)
   | _ -> invalid_arg "destApplication"
 
 let destApplication = destApp
@@ -427,18 +461,20 @@ let rec under_casts f c = match kind_of_term c with
 
 (* flattens application lists throwing casts in-between *)
 let rec collapse_appl c = match kind_of_term c with
-  | App (f,cl) ->
-      let rec collapse_rec f cl2 =
+  | App (f, rel, cl) ->
+      let rec collapse_rec f (rel, rels2 as r) cl2 =
         match kind_of_term (strip_outer_cast f) with
-	| App (g,cl1) -> collapse_rec g (Array.append cl1 cl2)
-	| _ -> mkApp (f,cl2)
+	| App (g, (rel', rels1), cl1) -> 
+	    collapse_rec g (merge_rel rel rel', Array.append rels1 rels2)
+	      (Array.append cl1 cl2)
+	| _ -> mkFullApp (f, r, cl2)
       in
-      collapse_rec f cl
+      collapse_rec f rel cl
   | _ -> c
 
 let decompose_app c =
   match kind_of_term c with
-    | App (f,cl) -> (f, Array.to_list cl)
+    | App (f,_,cl) -> (f, Array.to_list cl)
     | _ -> (c,[])
 
 (****************************************************************************)
@@ -456,7 +492,7 @@ let fold_constr f acc c = match kind_of_term c with
   | Prod (_,t,c) -> f (f acc t) c
   | Lambda (_,t,c) -> f (f acc t) c
   | LetIn (_,b,t,c) -> f (f (f acc b) t) c
-  | App (c,l) -> Array.fold_left f (f acc c) l
+  | App (c, _, l) -> Array.fold_left f (f acc c) l
   | Evar (_,l) -> Array.fold_left f acc l
   | Case (_,p,c,bl) -> Array.fold_left f (f (f acc p) c) bl
   | Fix (_,(lna,tl,bl)) ->
@@ -477,7 +513,7 @@ let iter_constr f c = match kind_of_term c with
   | Prod (_,t,c) -> f t; f c
   | Lambda (_,t,c) -> f t; f c
   | LetIn (_,b,t,c) -> f b; f t; f c
-  | App (c,l) -> f c; Array.iter f l
+  | App (c,_,l) -> f c; Array.iter f l
   | Evar (_,l) -> Array.iter f l
   | Case (_,p,c,bl) -> f p; f c; Array.iter f bl
   | Fix (_,(_,tl,bl)) -> Array.iter f tl; Array.iter f bl
@@ -496,7 +532,7 @@ let iter_constr_with_binders g f n c = match kind_of_term c with
   | Prod (_,t,c) -> f n t; f (g n) c
   | Lambda (_,t,c) -> f n t; f (g n) c
   | LetIn (_,b,t,c) -> f n b; f n t; f (g n) c
-  | App (c,l) -> f n c; Array.iter (f n) l
+  | App (c,_,l) -> f n c; Array.iter (f n) l
   | Evar (_,l) -> Array.iter (f n) l
   | Case (_,p,c,bl) -> f n p; f n c; Array.iter (f n) bl
   | Fix (_,(_,tl,bl)) ->
@@ -514,10 +550,10 @@ let map_constr f c = match kind_of_term c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> c
   | Cast (c,k,t) -> mkCast (f c, k, f t)
-  | Prod (na,t,c) -> mkProd (na, f t, f c)
-  | Lambda (na,t,c) -> mkLambda (na, f t, f c)
-  | LetIn (na,b,t,c) -> mkLetIn (na, f b, f t, f c)
-  | App (c,l) -> mkApp (f c, Array.map f l)
+  | Prod (na,t,c) -> mkFullProd (na, f t, f c)
+  | Lambda (na,t,c) -> mkFullLambda (na, f t, f c)
+  | LetIn (na,b,t,c) -> mkFullLetIn (na, f b, f t, f c)
+  | App (c,r,l) -> mkFullApp (f c, r, Array.map f l)
   | Evar (e,l) -> mkEvar (e, Array.map f l)
   | Case (ci,p,c,bl) -> mkCase (ci, f p, f c, Array.map f bl)
   | Fix (ln,(lna,tl,bl)) ->
@@ -535,10 +571,10 @@ let map_constr_with_binders g f l c = match kind_of_term c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> c
   | Cast (c,k,t) -> mkCast (f l c, k, f l t)
-  | Prod (na,t,c) -> mkProd (na, f l t, f (g l) c)
-  | Lambda (na,t,c) -> mkLambda (na, f l t, f (g l) c)
-  | LetIn (na,b,t,c) -> mkLetIn (na, f l b, f l t, f (g l) c)
-  | App (c,al) -> mkApp (f l c, Array.map (f l) al)
+  | Prod (na,t,c) -> mkFullProd (na, f l t, f (g l) c)
+  | Lambda (na,t,c) -> mkFullLambda (na, f l t, f (g l) c)
+  | LetIn (na,b,t,c) -> mkFullLetIn (na, f l b, f l t, f (g l) c)
+  | App (c,r,al) -> mkFullApp (f l c, r, Array.map (f l) al)
   | Evar (e,al) -> mkEvar (e, Array.map (f l) al)
   | Case (ci,p,c,bl) -> mkCase (ci, f l p, f l c, Array.map (f l) bl)
   | Fix (ln,(lna,tl,bl)) ->
@@ -565,9 +601,9 @@ let compare_constr f t1 t2 =
   | Prod (_,t1,c1), Prod (_,t2,c2) -> f t1 t2 & f c1 c2
   | Lambda (_,t1,c1), Lambda (_,t2,c2) -> f t1 t2 & f c1 c2
   | LetIn (_,b1,t1,c1), LetIn (_,b2,t2,c2) -> f b1 b2 & f t1 t2 & f c1 c2
-  | App (c1,l1), _ when isCast c1 -> f (mkApp (pi1 (destCast c1),l1)) t2
-  | _, App (c2,l2) when isCast c2 -> f t1 (mkApp (pi1 (destCast c2),l2))
-  | App (c1,l1), App (c2,l2) ->
+  | App (c1,r1,l1), _ when isCast c1 -> f (mkFullApp (pi1 (destCast c1),r1,l1)) t2
+  | _, App (c2,r2,l2) when isCast c2 -> f t1 (mkFullApp (pi1 (destCast c2),r2,l2))
+  | App (c1,r1,l1), App (c2,r2,l2) ->
     Array.length l1 = Array.length l2 &&
       f c1 c2 && array_for_all2 f l1 l2
   | Evar (e1,l1), Evar (e2,l2) -> e1 = e2 & array_for_all2 f l1 l2
@@ -613,9 +649,9 @@ let constr_ord_int f t1 t2 =
 	(f =? f) t1 t2 c1 c2
     | LetIn (_,b1,t1,c1), LetIn (_,b2,t2,c2) ->
 	((f =? f) ==? f) b1 b2 t1 t2 c1 c2
-    | App (c1,l1), _ when isCast c1 -> f (mkApp (pi1 (destCast c1),l1)) t2
-    | _, App (c2,l2) when isCast c2 -> f t1 (mkApp (pi1 (destCast c2),l2))
-    | App (c1,l1), App (c2,l2) -> (f =? (array_compare f)) c1 c2 l1 l2
+    | App (c1,r1,l1), _ when isCast c1 -> f (mkFullApp (pi1 (destCast c1),r1,l1)) t2
+    | _, App (c2,r2,l2) when isCast c2 -> f t1 (mkFullApp (pi1 (destCast c2),r2,l2))
+    | App (c1,r1,l1), App (c2,r2,l2) -> (f =? (array_compare f)) c1 c2 l1 l2
     | Evar (e1,l1), Evar (e2,l2) ->
 	((-) =? (array_compare f)) e1 e2 l1 l2
     | Const c1, Const c2 -> kn_ord (canonical_con c1) (canonical_con c2)
@@ -646,8 +682,8 @@ type types = constr
 
 type strategy = types option
 
-type named_declaration = identifier * constr option * types
-type rel_declaration = name * constr option * types
+type named_declaration = identifier * body * types
+type rel_declaration = name * body * types
 
 let map_named_declaration f (id, v, ty) = (id, Option.map f v, f ty)
 let map_rel_declaration = map_named_declaration
@@ -748,7 +784,7 @@ let noccur_between n m term =
 let noccur_with_meta n m term =
   let rec occur_rec n c = match kind_of_term c with
     | Rel p -> if n<=p & p<n+m then raise LocalOccur
-    | App(f,cl) ->
+    | App(f,_,cl) ->
 	(match kind_of_term f with
            | Cast (c,_,_) when isMeta c -> ()
            | Meta _ -> ()
@@ -874,41 +910,48 @@ let mkNamedProd id typ c = mkProd (Name id, typ, subst_var id c)
 let mkNamedLambda id typ c = mkLambda (Name id, typ, subst_var id c)
 let mkNamedLetIn id c1 t c2 = mkLetIn (Name id, c1, t, subst_var id c2)
 
+let mkFullNamedProd id annot typ c = 
+  mkFullProd ((Name id, annot), typ, subst_var id c)
+let mkFullNamedLambda id annot typ c = 
+  mkFullLambda ((Name id, annot), typ, subst_var id c)
+let mkFullNamedLetIn id annot c1 t c2 =
+  mkFullLetIn ((Name id, annot), c1, t, subst_var id c2)
+
 (* Constructs either [(x:t)c] or [[x=b:t]c] *)
 let mkProd_or_LetIn (na,body,t) c =
   match body with
-    | None -> mkProd (na, t, c)
-    | Some b -> mkLetIn (na, b, t, c)
+  | Variable annot -> mkFullProd ((na, annot), t, c)
+  | Definition (annot, b) -> mkFullLetIn ((na, annot), b, t, c)
 
 let mkNamedProd_or_LetIn (id,body,t) c =
   match body with
-    | None -> mkNamedProd id t c
-    | Some b -> mkNamedLetIn id b t c
+  | Variable annot -> mkFullNamedProd id annot t c
+  | Definition (annot, b) -> mkFullNamedLetIn id annot b t c
 
 (* Constructs either [(x:t)c] or [c] where [x] is replaced by [b] *)
 let mkProd_wo_LetIn (na,body,t) c =
   match body with
-    | None -> mkProd (na,  t, c)
-    | Some b -> subst1 b c
+  | Variable annot -> mkFullProd ((na, annot), t, c)
+  | Definition (annot, b) -> subst1 b c
 
 let mkNamedProd_wo_LetIn (id,body,t) c =
   match body with
-    | None -> mkNamedProd id t c
-    | Some b -> subst1 b (subst_var id c)
+  | Variable annot -> mkFullNamedProd id annot t c
+  | Definition (annot, b) -> subst1 b (subst_var id c)
 
 (* non-dependent product t1 -> t2 *)
-let mkArrow t1 t2 = mkProd (Anonymous, t1, t2)
+let mkArrow t1 t2 = mkFullProd (anon, t1, t2)
 
 (* Constructs either [[x:t]c] or [[x=b:t]c] *)
 let mkLambda_or_LetIn (na,body,t) c =
   match body with
-    | None -> mkLambda (na, t, c)
-    | Some b -> mkLetIn (na, b, t, c)
+  | Variable annot -> mkFullLambda ((na, annot), t, c)
+  | Definition (annot, b) -> mkFullLetIn ((na, annot), b, t, c)
 
 let mkNamedLambda_or_LetIn (id,body,t) c =
   match body with
-    | None -> mkNamedLambda id t c
-    | Some b -> mkNamedLetIn id b t c
+  | Variable annot -> mkFullNamedLambda id annot t c
+  | Definition (annot, b) -> mkFullNamedLetIn id annot b t c
 
 (* prodn n [xn:Tn;..;x1:T1;Gamma] b = (x1:T1)..(xn:Tn)b *)
 let prodn n env b =
@@ -949,7 +992,7 @@ let rec to_lambda n prod =
     prod
   else
     match kind_of_term prod with
-      | Prod (na,ty,bd) -> mkLambda (na,ty,to_lambda (n-1) bd)
+      | Prod (na,ty,bd) -> mkFullLambda (na,ty,to_lambda (n-1) bd)
       | Cast (c,_,_) -> to_lambda n c
       | _   -> errorlabstrm "to_lambda" (mt ())
 
@@ -958,7 +1001,7 @@ let rec to_prod n lam =
     lam
   else
     match kind_of_term lam with
-      | Lambda (na,ty,bd) -> mkProd (na,ty,to_prod (n-1) bd)
+      | Lambda (na,ty,bd) -> mkFullProd (na,ty,to_prod (n-1) bd)
       | Cast (c,_,_) -> to_prod n c
       | _   -> errorlabstrm "to_prod" (mt ())
 
@@ -1038,8 +1081,8 @@ let decompose_lam_n n =
 let decompose_prod_assum =
   let rec prodec_rec l c =
     match kind_of_term c with
-    | Prod (x,t,c)    -> prodec_rec (add_rel_decl (x,None,t) l) c
-    | LetIn (x,b,t,c) -> prodec_rec (add_rel_decl (x,Some b,t) l) c
+    | Prod ((x,annot),t,c)    -> prodec_rec (add_rel_decl (x,Variable annot,t) l) c
+    | LetIn ((x,annot),b,t,c) -> prodec_rec (add_rel_decl (x,Definition (annot, b),t) l) c
     | Cast (c,_,_)      -> prodec_rec l c
     | _               -> l,c
   in
@@ -1050,8 +1093,8 @@ let decompose_prod_assum =
 let decompose_lam_assum =
   let rec lamdec_rec l c =
     match kind_of_term c with
-    | Lambda (x,t,c)  -> lamdec_rec (add_rel_decl (x,None,t) l) c
-    | LetIn (x,b,t,c) -> lamdec_rec (add_rel_decl (x,Some b,t) l) c
+    | Lambda ((x,annot),t,c)  -> lamdec_rec (add_rel_decl (x,Variable annot,t) l) c
+    | LetIn ((x,annot),b,t,c) -> lamdec_rec (add_rel_decl (x,Definition (annot, b),t) l) c
     | Cast (c,_,_)      -> lamdec_rec l c
     | _               -> l,c
   in
@@ -1065,8 +1108,8 @@ let decompose_prod_n_assum n =
   let rec prodec_rec l n c =
     if n=0 then l,c
     else match kind_of_term c with
-    | Prod (x,t,c)    -> prodec_rec (add_rel_decl (x,None,t) l) (n-1) c
-    | LetIn (x,b,t,c) -> prodec_rec (add_rel_decl (x,Some b,t) l) (n-1) c
+    | Prod ((x,annot),t,c)    -> prodec_rec (add_rel_decl (x,Variable annot,t) l) (n-1) c
+    | LetIn ((x,annot),b,t,c) -> prodec_rec (add_rel_decl (x,Definition (annot,b),t) l) (n-1) c
     | Cast (c,_,_)      -> prodec_rec l n c
     | c -> error "decompose_prod_n_assum: not enough assumptions"
   in
@@ -1082,8 +1125,8 @@ let decompose_lam_n_assum n =
   let rec lamdec_rec l n c =
     if n=0 then l,c
     else match kind_of_term c with
-    | Lambda (x,t,c)  -> lamdec_rec (add_rel_decl (x,None,t) l) (n-1) c
-    | LetIn (x,b,t,c) -> lamdec_rec (add_rel_decl (x,Some b,t) l) n c
+    | Lambda ((x,annot),t,c)  -> lamdec_rec (add_rel_decl (x,Variable annot,t) l) (n-1) c
+    | LetIn ((x,annot),b,t,c) -> lamdec_rec (add_rel_decl (x,Definition (annot, b),t) l) n c
     | Cast (c,_,_)      -> lamdec_rec l n c
     | c -> error "decompose_lam_n_assum: not enough abstractions"
   in
@@ -1132,8 +1175,8 @@ type arity = rel_context * sorts
 let destArity =
   let rec prodec_rec l c =
     match kind_of_term c with
-    | Prod (x,t,c)    -> prodec_rec ((x,None,t)::l) c
-    | LetIn (x,b,t,c) -> prodec_rec ((x,Some b,t)::l) c
+    | Prod ((x,annot),t,c)    -> prodec_rec ((x,Variable annot,t)::l) c
+    | LetIn ((x,annot),b,t,c) -> prodec_rec ((x,Definition (annot,b),t)::l) c
     | Cast (c,_,_)      -> prodec_rec l c
     | Sort s          -> l,s
     | _               -> anomaly "destArity: not an arity"
@@ -1210,7 +1253,7 @@ let equals_constr t1 t2 =
     | Lambda (n1,t1,c1), Lambda (n2,t2,c2) -> n1 == n2 & t1 == t2 & c1 == c2
     | LetIn (n1,b1,t1,c1), LetIn (n2,b2,t2,c2) ->
       n1 == n2 & b1 == b2 & t1 == t2 & c1 == c2
-    | App (c1,l1), App (c2,l2) -> c1 == c2 & array_eqeq l1 l2
+    | App (c1,r1,l1), App (c2,r2,l2) -> c1 == c2 & r1 == r2 && array_eqeq l1 l2
     | Evar (e1,l1), Evar (e2,l2) -> e1 = e2 & array_eqeq l1 l2
     | Const c1, Const c2 -> c1 == c2
     | Ind (sp1,i1), Ind (sp2,i2) -> sp1 == sp2 & i1 = i2
@@ -1263,23 +1306,23 @@ let hcons_term (sh_sort,sh_ci,sh_construct,sh_ind,sh_con,sh_na,sh_id) =
 	let c, hc = sh_rec c in
 	let t, ht = sh_rec t in
 	(Cast (c, k, t), combinesmall 3 (combine3 hc (Hashtbl.hash k) ht))
-      | Prod (na,t,c) ->
+      | Prod ((na,annot),t,c) ->
 	let t, ht = sh_rec t
 	and c, hc = sh_rec c in
-	(Prod (sh_na na, t, c), combinesmall 4 (combine3 (Hashtbl.hash na) ht hc))
-      | Lambda (na,t,c) ->
+	(Prod ((sh_na na, annot), t, c), combinesmall 4 (combine3 (Hashtbl.hash na) ht hc))
+      | Lambda ((na, annot),t,c) ->
 	let t, ht = sh_rec t
 	and c, hc = sh_rec c in
-	(Lambda (sh_na na, t, c), combinesmall 5 (combine3 (Hashtbl.hash na) ht hc))
-      | LetIn (na,b,t,c) ->
+	(Lambda ((sh_na na, annot), t, c), combinesmall 5 (combine3 (Hashtbl.hash na) ht hc))
+      | LetIn ((na, annot),b,t,c) ->
 	let b, hb = sh_rec b in
 	let t, ht = sh_rec t in
 	let c, hc = sh_rec c in
-	(LetIn (sh_na na, b, t, c), combinesmall 6 (combine4 (Hashtbl.hash na) hb ht hc))
-      | App (c,l) ->
+	(LetIn ((sh_na na, annot), b, t, c), combinesmall 6 (combine4 (Hashtbl.hash na) hb ht hc))
+      | App (c,r,l) ->
 	let c, hc = sh_rec c in
 	let hl = hash_term_array l in
-	(App (c, l), combinesmall 7 (combine hl hc))
+	(App (c, r, l), combinesmall 7 (combine hl hc))
       | Evar (e,l) ->
 	let hl = hash_term_array l in
 	(* since the array have been hashed in place : *)
@@ -1338,8 +1381,8 @@ let rec hash_constr t =
     | Lambda (_, t, c) -> combinesmall 5 (combine (hash_constr t) (hash_constr c))
     | LetIn (_, b, t, c) ->
       combinesmall 6 (combine3 (hash_constr b) (hash_constr t) (hash_constr c))
-    | App (c,l) when isCast c -> hash_constr (mkApp (pi1 (destCast c),l))
-    | App (c,l) ->
+    | App (c,r,l) when isCast c -> hash_constr (mkFullApp (pi1 (destCast c),r,l))
+    | App (c,r,l) ->
       combinesmall 7 (combine (hash_term_array l) (hash_constr c))
     | Evar (e,l) ->
       combinesmall 8 (combine (Hashtbl.hash e) (hash_term_array l))
@@ -1409,3 +1452,47 @@ let hcons_types = hcons_constr
 (*******)
 (* Type of abstract machine values *)
 type values
+
+module KindOfTerm = struct
+
+  type ('constr, 'types) kind_of_term =
+  | Rel       of int
+  | Var       of identifier
+  | Meta      of metavariable
+  | Evar      of 'constr pexistential
+  | Sort      of sorts
+  | Cast      of 'constr * cast_kind * 'types
+  | Prod      of name * 'types * 'types
+  | Lambda    of name * 'types * 'constr
+  | LetIn     of name * 'constr * 'types * 'constr
+  | App       of 'constr * 'constr array
+  | Const     of constant
+  | Ind       of inductive
+  | Construct of constructor
+  | Case      of case_info * 'constr * 'constr * 'constr array
+  | Fix       of ('constr, 'types) pfixpoint
+  | CoFix     of ('constr, 'types) pcofixpoint
+
+end
+
+let kind_of_term (c : constr) : (constr,types) KindOfTerm.kind_of_term =
+  match c with
+  | Rel i -> KindOfTerm.Rel i
+  | Var i -> KindOfTerm.Var i
+  | Meta m -> KindOfTerm.Meta m
+  | Evar e -> KindOfTerm.Evar e
+  | Sort s -> KindOfTerm.Sort s
+  | Cast (c, k, c') -> KindOfTerm.Cast (c, k, c')
+  | Prod ((na, annot), t, t') -> KindOfTerm.Prod (na, t, t')
+  | Lambda ((na, annot), t, t') -> KindOfTerm.Lambda (na, t, t')
+  | LetIn ((na, annot), t, t', t'') -> KindOfTerm.LetIn (na, t, t', t'')
+  | App (f, r, c) -> KindOfTerm.App (f, c)
+  | Const c -> KindOfTerm.Const c
+  | Ind i -> KindOfTerm.Ind i
+  | Construct c -> KindOfTerm.Construct c
+  | Case (ci, p, c, brs) -> KindOfTerm.Case (ci, p, c, brs)
+  | Fix f -> KindOfTerm.Fix f
+  | CoFix f -> KindOfTerm.CoFix f
+
+open KindOfTerm
+type ('constr, 'types) kind_of_term = ('constr, 'types) KindOfTerm.kind_of_term
