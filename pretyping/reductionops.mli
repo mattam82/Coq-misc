@@ -150,9 +150,9 @@ val hnf_lam_app      : env ->  evar_map -> constr -> constr -> constr
 val hnf_lam_appvect  : env ->  evar_map -> constr -> constr array -> constr
 val hnf_lam_applist  : env ->  evar_map -> constr -> constr list -> constr
 
-val splay_prod : env ->  evar_map -> constr -> (name * constr) list * constr
-val splay_lam : env ->  evar_map -> constr -> (name * constr) list * constr
-val splay_arity : env ->  evar_map -> constr -> (name * constr) list * sorts
+val splay_prod : env ->  evar_map -> constr -> (name binder_annot * constr) list * constr
+val splay_lam : env ->  evar_map -> constr -> (name binder_annot * constr) list * constr
+val splay_arity : env ->  evar_map -> constr -> (name binder_annot * constr) list * sorts
 val sort_of_arity : env -> evar_map -> constr -> sorts
 val splay_prod_n : env ->  evar_map -> int -> constr -> rel_context * constr
 val splay_lam_n : env ->  evar_map -> int -> constr -> rel_context * constr
@@ -171,7 +171,7 @@ type 'a miota_args = {
 val reducible_mind_case : constr -> bool
 val reduce_mind_case : constr miota_args -> constr
 
-val find_conclusion : env -> evar_map -> constr -> (constr,constr) kind_of_term
+val find_conclusion : env -> evar_map -> constr -> (constr,constr) Constr.kind_of_term
 val is_arity : env ->  evar_map -> constr -> bool
 
 val whd_programs :  reduction_function

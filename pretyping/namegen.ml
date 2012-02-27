@@ -89,10 +89,10 @@ let hdchar env c =
 	     | (Anonymous,_,t) -> hdrec 0 (lift (n-k) t)
 	   with Not_found -> "y")
     | Fix ((_,i),(lna,_,_)) ->
-	let id = match lna.(i) with Name id -> id | _ -> assert false in
+	let id = match letname_of lna.(i) with Name id -> id | _ -> assert false in
 	lowercase_first_char id
     | CoFix (i,(lna,_,_)) ->
-	let id = match lna.(i) with Name id -> id | _ -> assert false in
+	let id = match letname_of lna.(i) with Name id -> id | _ -> assert false in
 	lowercase_first_char id
     | Meta _|Evar _|Case (_, _, _, _) -> "y"
   in
@@ -117,8 +117,8 @@ let lambda_create env (a,b) =  mkLambda (named_hd env a Anonymous, a, b)
 
 let name_assumption env (na,c,t) =
   match c with
-    | None      -> (named_hd env t na, None, t)
-    | Some body -> (named_hd env body na, c, t)
+    | Variable ann      -> (named_hd env t na, c, t)
+    | Definition (_, body) -> (named_hd env body na, c, t)
 
 let name_context env hyps =
   snd

@@ -510,9 +510,9 @@ let hnf_prod_applist env t nl =
 let dest_prod env =
   let rec decrec env m c =
     let t = whd_betadeltaiota env c in
-    match kind_of_term t with
-      | Prod (n,a,c0) ->
-          let d = (n,None,a) in
+    match Constr.kind_of_term t with
+      | Constr.Prod (n,a,c0) ->
+          let d = var_decl_of n a in
 	  decrec (push_rel d env) (add_rel_decl d m) c0
       | _ -> m,t
   in
@@ -522,14 +522,14 @@ let dest_prod env =
 let dest_prod_assum env =
   let rec prodec_rec env l ty =
     let rty = whd_betadeltaiota_nolet env ty in
-    match kind_of_term rty with
-    | Prod (x,t,c)  ->
-        let d = (x,None,t) in
+    match Constr.kind_of_term rty with
+    | Constr.Prod (x,t,c)  ->
+        let d = var_decl_of x t in
 	prodec_rec (push_rel d env) (add_rel_decl d l) c
-    | LetIn (x,b,t,c) ->
-        let d = (x,Some b,t) in
+    | Constr.LetIn (x,b,t,c) ->
+        let d = def_decl_of x b t in
 	prodec_rec (push_rel d env) (add_rel_decl d l) c
-    | Cast (c,_,_)    -> prodec_rec env l c
+    | Constr.Cast (c,_,_)    -> prodec_rec env l c
     | _               -> l,rty
   in
   prodec_rec env empty_rel_context

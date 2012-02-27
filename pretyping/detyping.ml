@@ -420,7 +420,7 @@ and detype_fix isgoal avoid env (vn,_ as nvn) (names,tys,bodies) =
   let def_avoid, def_env, lfi =
     Array.fold_left
       (fun (avoid, env, l) na ->
-	 let id = next_name_away na avoid in
+	 let id = next_name_away (letname_of na) avoid in
 	 (id::avoid, add_name (Name id) env, id::l))
       (avoid, env, []) names in
   let n = Array.length tys in
@@ -436,7 +436,7 @@ and detype_cofix isgoal avoid env n (names,tys,bodies) =
   let def_avoid, def_env, lfi =
     Array.fold_left
       (fun (avoid, env, l) na ->
-	 let id = next_name_away na avoid in
+	 let id = next_name_away (letname_of na) avoid in
 	 (id::avoid, add_name (Name id) env, id::l))
       (avoid, env, []) names in
   let ntys = Array.length tys in

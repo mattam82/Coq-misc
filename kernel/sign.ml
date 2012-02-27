@@ -40,7 +40,7 @@ let vars_of_named_context = List.map (fun (id,_,_) -> id)
 
 let instance_from_named_context sign =
   let rec inst_rec = function
-    | (id,None,_) :: sign -> mkVar id :: inst_rec sign
+    | (id,Variable _,_) :: sign -> mkVar id :: inst_rec sign
     | _ :: sign -> inst_rec sign
     | [] -> [] in
   Array.of_list (inst_rec sign)
@@ -56,7 +56,7 @@ let fold_rel_context_reverse f ~init:x l = List.fold_left f x l
 
 let map_context f l =
   let map_decl (n, body_o, typ as decl) =
-    let body_o' = Option.smartmap f body_o in
+    let body_o' = smartmap_body f body_o in
     let typ' = f typ in
       if body_o' == body_o && typ' == typ then decl else
 	(n, body_o', typ')
@@ -66,8 +66,8 @@ let map_context f l =
 let map_rel_context = map_context
 let map_named_context = map_context
 
-let iter_rel_context f = List.iter (fun (_,b,t) -> f t; Option.iter f b)
-let iter_named_context f = List.iter (fun (_,b,t) -> f t; Option.iter f b)
+let iter_rel_context f = List.iter (fun (_,b,t) -> f t; iter_body f b)
+let iter_named_context f = List.iter (fun (_,b,t) -> f t; iter_body f b)
 
 (* Push named declarations on top of a rel context *)
 (* Bizarre. Should be avoided. *)
@@ -75,7 +75,7 @@ let push_named_to_rel_context hyps ctxt =
   let rec push = function
     | (id,b,t) :: l ->
 	let s, hyps = push l in
-	let d = (Name id, Option.map (subst_vars s) b, subst_vars s t) in
+	let d = map_rel_declaration (subst_vars s) (Name id, b, t) in
 	id::s, d::hyps
     | [] -> [],[] in
   let s, hyps = push hyps in

@@ -106,7 +106,6 @@ val mkCast : constr * cast_kind * constr -> constr
 
 (** Constructs the product [(x:t1)t2] *)
 val mkProd : name * types * types -> types
-val mkFullProd : name binder_annot * types * types -> types
 val mkNamedProd : identifier -> types -> types -> types
 
 (** non-dependent product [t1 -> t2], an alias for
@@ -117,18 +116,15 @@ val mkArrow : types -> types -> constr
 
 (** Constructs the abstraction \[x:t{_ 1}\]t{_ 2} *)
 val mkLambda : name * types * constr -> constr
-val mkFullLambda : name binder_annot * types * constr -> constr
 val mkNamedLambda : identifier -> types -> constr -> constr
 
 (** Constructs the product [let x = t1 : t2 in t3] *)
 val mkLetIn : name * constr * types * constr -> constr
-val mkFullLetIn : name letbinder_annot * constr * types * constr -> constr
 val mkNamedLetIn : identifier -> constr -> types -> constr -> constr
 
 (** [mkApp (f,[| t_1; ...; t_n |]] constructs the application
    {% $(f~t_1~\dots~t_n)$ %}. *)
 val mkApp : constr * constr array -> constr
-val mkFullApp : constr * (relevance * relevance array) * constr array -> constr
 
 (** Constructs a constant 
    The array of terms correspond to the variables introduced in the section *)
@@ -170,7 +166,7 @@ val mkCase : case_info * constr * constr * constr array -> constr
 
    where the length of the {% $ %}j{% $ %}th context is {% $ %}ij{% $ %}.
 *)
-type rec_declaration = name array * types array * constr array
+type rec_declaration = name letbinder_annot array * types array * constr array
 type fixpoint = (int array * int) * rec_declaration
 val mkFix : fixpoint -> constr
 
@@ -195,31 +191,43 @@ val mkCoFix : cofixpoint -> constr
    the same order (i.e. last argument first) *)
 type 'constr pexistential = existential_key * 'constr array
 type ('constr, 'types) prec_declaration =
-    name array * 'types array * 'constr array
+    name letbinder_annot array * 'types array * 'constr array
 type ('constr, 'types) pfixpoint =
     (int array * int) * ('constr, 'types) prec_declaration
 type ('constr, 'types) pcofixpoint =
     int * ('constr, 'types) prec_declaration
 
-type ('constr, 'types) full_kind_of_term =
-  | Rel       of int
-  | Var       of identifier
-  | Meta      of metavariable
-  | Evar      of 'constr pexistential
-  | Sort      of sorts
-  | Cast      of 'constr * cast_kind * 'types
-  | Prod      of name binder_annot * 'types * 'types
-  | Lambda    of name binder_annot * 'types * 'constr
-  | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
-  | App       of 'constr * (relevance * relevance array) * 'constr array
-  | Const     of constant
-  | Ind       of inductive
-  | Construct of constructor
-  | Case      of case_info * 'constr * 'constr * 'constr array
-  | Fix       of ('constr, 'types) pfixpoint
-  | CoFix     of ('constr, 'types) pcofixpoint
 
-val full_kind_of_term : constr -> (constr, types) full_kind_of_term
+module Constr : sig
+
+  (* [Var] is used for named variables and [Rel] for variables as
+     de Bruijn indices. *)
+  type ('constr, 'types) kind_of_term =
+    | Rel       of int
+    | Var       of identifier
+    | Meta      of metavariable
+    | Evar      of 'constr pexistential
+    | Sort      of sorts
+    | Cast      of 'constr * cast_kind * 'types
+    | Prod      of name binder_annot * 'types * 'types
+    | Lambda    of name binder_annot * 'types * 'constr
+    | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
+    | App       of 'constr * (relevance * relevance array) * 'constr array
+    | Const     of constant
+    | Ind       of inductive
+    | Construct of constructor
+    | Case      of case_info * 'constr * 'constr * 'constr array
+    | Fix       of ('constr, 'types) pfixpoint
+    | CoFix     of ('constr, 'types) pcofixpoint
+      
+  val kind_of_term : constr -> (constr, types) kind_of_term
+
+  val mkProd : name binder_annot * types * types -> types
+  val mkLetIn : name letbinder_annot * constr * types * constr -> constr
+  val mkLambda : name binder_annot * types * constr -> constr
+  val mkApp : constr * (relevance * relevance array) * constr array -> constr
+
+end
 
 type ('constr, 'types) kind_of_term =
   | Rel       of int
@@ -364,11 +372,30 @@ val destCoFix : constr -> cofixpoint
     purpose) *)
 
 type body = 
-  | Variable of implicit * relevance
+  | Variable of (relevance * implicit)
   | Definition of relevance * constr
 
-type named_declaration = identifier * body * types
-type rel_declaration = name * body * types
+val variable_body : body
+val definition_body : constr -> body
+val constr_of_body : body -> constr option
+
+val map_body : (constr -> constr) -> body -> body
+val smartmap_body : (constr -> constr) -> body -> body
+val iter_body : (constr -> unit) -> body -> unit
+val cata_body : (constr -> 'a) -> 'a -> body -> 'a
+
+val anonymous : name binder_annot
+
+type 'a declaration = 'a * body * types
+type named_declaration = identifier declaration
+type rel_declaration = name declaration
+
+val var_decl_of : 'a binder_annot -> types -> 'a declaration
+val def_decl_of : 'a letbinder_annot -> constr -> types -> 'a declaration
+val fix_decl_of : 'a letbinder_annot -> types -> 'a declaration
+
+val name_of : 'a binder_annot -> 'a
+val letname_of : 'a letbinder_annot -> 'a
 
 val map_named_declaration :
   (constr -> constr) -> named_declaration -> named_declaration
@@ -405,6 +432,10 @@ val empty_rel_context : rel_context
 val add_rel_decl : rel_declaration -> rel_context -> rel_context
 
 val lookup_rel : int -> rel_context -> rel_declaration
+val evaluable_rel : int -> rel_context -> bool
+
+val body_of_rel : int -> rel_context -> constr option
+
 val rel_context_length : rel_context -> int
 val rel_context_nhyps : rel_context -> int
 

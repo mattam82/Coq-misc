@@ -110,10 +110,10 @@ let is_unit constrsinfos =
 
 let rec infos_and_sort env t =
   let t = whd_betadeltaiota env t in
-  match kind_of_term t with
-    | Prod (name,c1,c2) ->
+  match Constr.kind_of_term t with
+    | Constr.Prod (name,c1,c2) ->
         let (varj,_) = infer_type env c1 in
-	let env1 = Environ.push_rel (name,None,varj.utj_val) env in
+	let env1 = Environ.push_rel (var_decl_of name varj.utj_val) env in
 	let logic = is_logic_type varj in
 	let small = Term.is_small varj.utj_type in
 	(logic,small) :: (infos_and_sort env1 c2)
@@ -176,6 +176,10 @@ let infer_constructor_packet env_ar_par params lc =
 
   (info,lc'',level,cst)
 
+let is_variable_body = function
+  | Variable _ -> true
+  | Definition _ -> false
+
 (* Type-check an inductive definition. Does not check positivity
    conditions. *)
 let typecheck_inductive env mie =
@@ -200,7 +204,8 @@ let typecheck_inductive env mie =
 	 let cst = union_constraints cst cst2 in
 	 let id = ind.mind_entry_typename in
 	 let env_ar' =
-           push_rel (Name id, None, full_arity)
+	   let body = Variable (relevance_of_sort arity.utj_type, false) in
+             push_rel (Name id, body, full_arity)
              (add_constraints cst2 env_ar) in
 	 let lev =
 	   (* Decide that if the conclusion is not explicitly Type *)
@@ -234,7 +239,7 @@ let typecheck_inductive env mie =
   let inds = Array.of_list inds in
   let arities = Array.of_list arity_list in
   let param_ccls = List.fold_left (fun l (_,b,p) ->
-    if b = None then
+    if is_variable_body b then
       (* Parameter contributes to polymorphism only if explicit Type *)
       let c = strip_prod_assum p in
       (* Add Type levels to the ordered list of parameters contributing to *)
@@ -334,7 +339,7 @@ let check_correct_par (env,n,ntypes,_) hyps l largs =
   let nhyps = List.length hyps in
   let rec check k index = function
     | [] -> ()
-    | (_,Some _,_)::hyps -> check k (index+1) hyps
+    | (_,Definition _,_)::hyps -> check k (index+1) hyps
     | _::hyps ->
         match kind_of_term (whd_betadeltaiota env lpar.(k)) with
 	  | Rel w when w = index -> check (k-1) (index+1) hyps
@@ -356,7 +361,7 @@ if nmr = 0 then 0 else
       function
 	  ([],_) -> nmr
 	| (_,[]) -> assert false (* |hyps|>=nmr *)
-	| (lp,(_,Some _,_)::hyps) -> find k (index-1) (lp,hyps)
+	| (lp,(_,Definition _,_)::hyps) -> find k (index-1) (lp,hyps)
 	| (p::lp,_::hyps) ->
        ( match kind_of_term (whd_betadeltaiota env p) with
 	  | Rel w when w = index -> find (k+1) (index-1) (lp,hyps)
@@ -387,14 +392,14 @@ let abstract_mind_lc env ntyps npars lc =
    [lra] is the list of recursive tree of each variable
  *)
 let ienv_push_var (env, n, ntypes, lra) (x,a,ra) =
- (push_rel (x,None,a) env, n+1, ntypes, (Norec,ra)::lra)
+ (push_rel (var_decl_of x a) env, n+1, ntypes, (Norec,ra)::lra)
 
 let ienv_push_inductive (env, n, ntypes, ra_env) (mi,lpar) =
   let auxntyp = 1 in
   let specif = lookup_mind_specif env mi in
   let env' =
-    push_rel (Anonymous,None,
-              hnf_prod_applist env (type_of_inductive env specif) lpar) env in
+    push_rel (var_decl_of anonymous
+              (hnf_prod_applist env (type_of_inductive env specif) lpar)) env in
   let ra_env' =
     (Imbr mi,(Rtree.mk_rec_calls 1).(0)) ::
     List.map (fun (r,t) -> (r,Rtree.lift 1 t)) ra_env in
@@ -405,8 +410,8 @@ let ienv_push_inductive (env, n, ntypes, ra_env) (mi,lpar) =
 let rec ienv_decompose_prod (env,_,_,_ as ienv) n c =
   if n=0 then (ienv,c) else
     let c' = whd_betadeltaiota env c in
-    match kind_of_term c' with
-	Prod(na,a,b) ->
+    match Constr.kind_of_term c' with
+	Constr.Prod(na,a,b) ->
 	  let ienv' = ienv_push_var ienv (na,a,mk_norec) in
 	  ienv_decompose_prod ienv' (n-1) b
       | _ -> assert false
@@ -422,14 +427,14 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs lcname
   (* Checking the (strict) positivity of a constructor argument type [c] *)
   let rec check_pos (env, n, ntypes, ra_env as ienv) nmr c =
     let x,largs = decompose_app (whd_betadeltaiota env c) in
-      match kind_of_term x with
-	| Prod (na,b,d) ->
+      match Constr.kind_of_term x with
+	| Constr.Prod (na,b,d) ->
 	    assert (largs = []);
             (match weaker_noccur_between env n ntypes b with
 		None -> failwith_non_pos_list n ntypes [b]
               | Some b ->
 	          check_pos (ienv_push_var ienv (na, b, mk_norec)) nmr d)
-	| Rel k ->
+	| Constr.Rel k ->
             (try let (ra,rarg) = List.nth ra_env (k-1) in
 	    let nmr1 =
 	      (match ra with
@@ -440,7 +445,7 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs lcname
 	      then failwith_non_pos_list n ntypes largs
 	      else (nmr1,rarg)
               with Failure _ | Invalid_argument _ -> (nmr,mk_norec))
-	| Ind ind_kn ->
+	| Constr.Ind ind_kn ->
             (* If the inductive type being defined appears in a
                parameter, then we have a nested indtype *)
             if List.for_all (noccur_between n ntypes) largs then (nmr,mk_norec)
@@ -497,9 +502,9 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs lcname
   and check_constructors ienv check_head nmr c =
     let rec check_constr_rec (env,n,ntypes,ra_env as ienv) nmr lrec c =
       let x,largs = decompose_app (whd_betadeltaiota env c) in
-	match kind_of_term x with
+	match Constr.kind_of_term x with
 
-          | Prod (na,b,d) ->
+          | Constr.Prod (na,b,d) ->
 	      assert (largs = []);
               let nmr',recarg = check_pos ienv nmr b in
               let ienv' = ienv_push_var ienv (na,b,mk_norec) in
@@ -507,7 +512,7 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs lcname
 
 	  | hd ->
 	      if check_head then
-		if hd = Rel (n+ntypes-i-1) then
+		if hd = Constr.Rel (n+ntypes-i-1) then
 		  check_correct_par ienv hyps (ntypes-i) largs
 		else
 		  raise (IllFormedInd LocalNotConstructor)

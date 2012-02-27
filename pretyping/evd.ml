@@ -746,8 +746,8 @@ let pr_meta_map mmap =
 
 let pr_decl ((id,b,_),ok) =
   match b with
-  | None -> if ok then pr_id id else (str "{" ++ pr_id id ++ str "}")
-  | Some c -> str (if ok then "(" else "{") ++ pr_id id ++ str ":=" ++
+  | Variable _ -> if ok then pr_id id else (str "{" ++ pr_id id ++ str "}")
+  | Definition (_, c) -> str (if ok then "(" else "{") ++ pr_id id ++ str ":=" ++
       print_constr c ++ str (if ok then ")" else "}")
 
 let pr_evar_source = function
@@ -840,8 +840,8 @@ let pr_evar_map_t depth sigma =
 
 let print_env_short env =
   let pr_body n = function None -> pr_name n | Some b -> str "(" ++ pr_name n ++ str " := " ++ print_constr b ++ str ")" in
-  let pr_named_decl (n, b, _) = pr_body (Name n) b in
-  let pr_rel_decl (n, b, _) = pr_body n b in
+  let pr_named_decl (n, b, _) = pr_body (Name n) (constr_of_body b) in
+  let pr_rel_decl (n, b, _) = pr_body n (constr_of_body b) in
   let nc = List.rev (named_context env) in
   let rc = List.rev (rel_context env) in
     str "[" ++ prlist_with_sep pr_spc pr_named_decl nc ++ str "]" ++ spc () ++

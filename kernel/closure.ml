@@ -239,9 +239,7 @@ let defined_vars flags env =
 (*  if red_local_const (snd flags) then*)
     Sign.fold_named_context
       (fun (id,b,_) e ->
-	 match b with
-	   | None -> e
-	   | Some body -> (id, body)::e)
+       cata_body (fun body -> (id, body)::e) e b)
        (named_context env) ~init:[]
 (*  else []*)
 
@@ -249,9 +247,7 @@ let defined_rels flags env =
 (*  if red_local_const (snd flags) then*)
   Sign.fold_rel_context
       (fun (id,b,t) (i,subs) ->
-	 match b with
-	   | None -> (i+1, subs)
-	   | Some body -> (i+1, (i,body) :: subs))
+       cata_body (fun body -> (i+1, (i,body) :: subs)) (i+1, subs) b)
       (rel_context env) ~init:(0,[])
 (*  else (0,[])*)
 

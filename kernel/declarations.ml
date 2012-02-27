@@ -106,7 +106,7 @@ let is_opaque cb = match cb.const_body with
 (* Substitutions of [constant_body] *)
 
 let subst_rel_declaration sub (id,copt,t as x) =
-  let copt' = Option.smartmap (subst_mps sub) copt in
+  let copt' = smartmap_body (subst_mps sub) copt in
   let t' = subst_mps sub t in
   if copt == copt' & t == t' then x else (id,copt',t')
 
@@ -137,7 +137,7 @@ let subst_const_body sub cb = {
 
 let hcons_rel_decl ((n,oc,t) as d) =
   let n' = hcons_name n
-  and oc' = Option.smartmap hcons_constr oc
+  and oc' = smartmap_body hcons_constr oc
   and t' = hcons_types t
   in if n' == n && oc' == oc && t' == t then d else (n',oc',t')
 

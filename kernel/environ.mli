@@ -60,6 +60,7 @@ val push_rec_types   : rec_declaration -> env -> env
    raises [Not_found] if the index points out of the context *)
 val lookup_rel    : int -> env -> rel_declaration
 val evaluable_rel : int -> env -> bool
+val rel_value     : int -> env -> constr option
 
 (** {6 Recurrence on [rel_context] } *)
 
@@ -93,7 +94,8 @@ val lookup_named     : variable -> env -> named_declaration
 val lookup_named_val : variable -> named_context_val -> named_declaration
 val evaluable_named  : variable -> env -> bool
 val named_type : variable -> env -> types
-val named_body : variable -> env -> constr option
+val named_body : variable -> env -> body
+val named_value : variable -> env -> constr option
 
 (** {6 Recurrence on [named_context]: older declarations processed first } *)
 

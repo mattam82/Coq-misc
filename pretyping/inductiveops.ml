@@ -178,11 +178,11 @@ let lift_constructor n cs = {
 
 let instantiate_params t args sign =
   let rec inst s t = function
-    | ((_,None,_)::ctxt,a::args) ->
+    | ((_,Variable _,_)::ctxt,a::args) ->
 	(match kind_of_term t with
 	   | Prod(_,_,t) -> inst (a::s) t (ctxt,args)
 	   | _ -> anomaly"instantiate_params: type, ctxt and args mismatch")
-    | ((_,(Some b),_)::ctxt,args) ->
+    | ((_,(Definition (_, b)),_)::ctxt,args) ->
 	(match kind_of_term t with
 	   | LetIn(_,_,_,t) -> inst ((substl s b)::s) t (ctxt,args)
 	   | _ -> anomaly"instantiate_params: type, ctxt and args mismatch")
@@ -220,8 +220,8 @@ let substl_rel_context subst = substnl_rel_context subst 0
 
 let rec instantiate_context sign args =
   let rec aux subst = function
-  | (_,None,_)::sign, a::args -> aux (a::subst) (sign,args)
-  | (_,Some b,_)::sign, args -> aux (substl subst b::subst) (sign,args)
+  | (_,Variable _,_)::sign, a::args -> aux (a::subst) (sign,args)
+  | (_,Definition (_, b),_)::sign, args -> aux (substl subst b::subst) (sign,args)
   | [], [] -> subst
   | _ -> anomaly "Signature/instance mismatch in inductive family"
   in aux [] (List.rev sign,args)
@@ -264,7 +264,7 @@ let make_arity_signature env dep indf =
   if dep then
     (* We need names everywhere *)
     name_context env
-      ((Anonymous,None,build_dependent_inductive env indf)::arsign)
+      ((Anonymous,variable_body,build_dependent_inductive env indf)::arsign)
       (* Costly: would be better to name once for all at definition time *)
   else
     (* No need to enforce names *)
@@ -329,10 +329,10 @@ let find_coinductive env sigma c =
 let is_predicate_explicitly_dep env pred arsign =
   let rec srec env pval arsign =
     let pv' = whd_betadeltaiota env Evd.empty pval in
-    match kind_of_term pv', arsign with
-      | Lambda (na,t,b), (_,None,_)::arsign ->
+    match Constr.kind_of_term pv', arsign with
+      | Constr.Lambda (na,t,b), (_,Variable _,_)::arsign ->
 	  srec (push_rel_assum (na,t) env) b arsign
-      | Lambda (na,_,_), _ ->
+      | Constr.Lambda (na,_,_), _ ->
 
        (* The following code has an impact on the introduction names
 	  given by the tactics "case" and "inversion": when the
@@ -355,7 +355,7 @@ let is_predicate_explicitly_dep env pred arsign =
           check whether the predicate is actually dependent or not
           would indeed be more natural! *)
 
-	  na <> Anonymous
+	  name_of na <> Anonymous
 
       | _ -> anomaly "Non eta-expanded dep-expanded \"match\" predicate"
   in
@@ -422,11 +422,11 @@ let is_constrained is u =
    that appear in the type of the inductive by the sort of the
    conclusion, and the other ones by fresh universes. *)
 let rec instantiate_universes env scl is = function
-  | (_,Some _,_ as d)::sign, exp ->
+  | (_,Definition _,_ as d)::sign, exp ->
       d :: instantiate_universes env scl is (sign, exp)
   | d::sign, None::exp ->
       d :: instantiate_universes env scl is (sign, exp)
-  | (na,None,ty)::sign, Some u::exp ->
+  | (na,(Variable _ as ann),ty)::sign, Some u::exp ->
       let ctx,_ = Reduction.dest_arity env ty in
       let s =
         if is_constrained is u then
@@ -434,7 +434,7 @@ let rec instantiate_universes env scl is = function
         else
           (* unconstriained sort: replace by fresh universe *)
           new_Type_sort() in
-      (na,None,mkArity(ctx,s)):: instantiate_universes env scl is (sign, exp)
+      ((na, ann, mkArity(ctx,s))):: instantiate_universes env scl is (sign, exp)
   | sign, [] -> sign (* Uniform parameters are exhausted *)
   | [], _ -> assert false
 

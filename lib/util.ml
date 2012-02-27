@@ -1076,6 +1076,10 @@ let array_chop n v =
   if n > vlen then failwith "array_chop";
   (Array.sub v 0 n, Array.sub v n (vlen-n))
 
+let array_decompose_last v =
+  let len = Array.length v - 1 in
+  (Array.sub v 0 len, v.(len))
+
 exception Local of int
 
 (* If none of the elements is changed by f we return ar itself.

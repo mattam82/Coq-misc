@@ -32,6 +32,10 @@ let pr_name = function
   | Name id -> pr_id id
   | Anonymous -> str "_"
 
+let pr_aname (na, (rel, expl)) = pr_name na  
+
+let pr_letaname (na, rel) = pr_name na  
+
 let pr_con sp = str(string_of_con sp)
 
 let rec pr_constr c = match kind_of_term c with
@@ -75,7 +79,7 @@ let rec pr_constr c = match kind_of_term c with
       hov 1
         (str"fix " ++ int i ++ spc() ++  str"{" ++
          v 0 (prlist_with_sep spc (fun (na,i,ty,bd) ->
-           pr_name na ++ str"/" ++ int i ++ str":" ++ pr_constr ty ++
+           pr_letaname na ++ str"/" ++ int i ++ str":" ++ pr_constr ty ++
            cut() ++ str":=" ++ pr_constr bd) (Array.to_list fixl)) ++
          str"}")
   | CoFix(i,(lna,tl,bl)) ->
@@ -83,7 +87,7 @@ let rec pr_constr c = match kind_of_term c with
       hov 1
         (str"cofix " ++ int i ++ spc() ++  str"{" ++
          v 0 (prlist_with_sep spc (fun (na,ty,bd) ->
-           pr_name na ++ str":" ++ pr_constr ty ++
+           pr_letaname na ++ str":" ++ pr_constr ty ++
            cut() ++ str":=" ++ pr_constr bd) (Array.to_list fixl)) ++
          str"}")
 
@@ -94,8 +98,8 @@ let set_print_constr f = term_printer := f
 
 let pr_var_decl env (id,c,typ) =
   let pbody = match c with
-    | None ->  (mt ())
-    | Some c ->
+    | Variable _ -> (mt ())
+    | Definition (_, c) ->
 	(* Force evaluation *)
 	let pb = print_constr_env env c in
 	  (str" := " ++ pb ++ cut () ) in
@@ -105,8 +109,8 @@ let pr_var_decl env (id,c,typ) =
 
 let pr_rel_decl env (na,c,typ) =
   let pbody = match c with
-    | None -> mt ()
-    | Some c ->
+    | Variable _ -> mt ()
+    | Definition (rel, c) ->
 	(* Force evaluation *)
 	let pb = print_constr_env env c in
 	  (str":=" ++ spc () ++ pb ++ spc ()) in
@@ -161,10 +165,10 @@ let new_Type_sort () = Type (new_univ ())
    head normal form) *)
 let refresh_universes_gen strict t =
   let modified = ref false in
-  let rec refresh t = match kind_of_term t with
-    | Sort (Type u) when strict or u <> Univ.type0m_univ ->
+  let rec refresh t = match Constr.kind_of_term t with
+    | Constr.Sort (Type u) when strict or u <> Univ.type0m_univ ->
 	modified := true; new_Type ()
-    | Prod (na,u,v) -> mkProd (na,u,refresh v)
+    | Constr.Prod (na,u,v) -> Constr.mkProd (na,u,refresh v)
     | _ -> t in
   let t' = refresh t in
   if !modified then t' else t
@@ -191,8 +195,8 @@ let rel_list n m =
 (* Same as [rel_list] but takes a context as argument and skips let-ins *)
 let extended_rel_list n hyps =
   let rec reln l p = function
-    | (_,None,_) :: hyps -> reln (mkRel (n+p) :: l) (p+1) hyps
-    | (_,Some _,_) :: hyps -> reln l (p+1) hyps
+    | (_,Variable _,_) :: hyps -> reln (mkRel (n+p) :: l) (p+1) hyps
+    | (_,Definition _,_) :: hyps -> reln l (p+1) hyps
     | [] -> l
   in
   reln [] 1 hyps
@@ -201,17 +205,17 @@ let extended_rel_vect n hyps = Array.of_list (extended_rel_list n hyps)
 
 
 
-let push_rel_assum (x,t) env = push_rel (x,None,t) env
+let push_rel_assum (x,t) env = push_rel (var_decl_of x t) env
 
 let push_rels_assum assums =
-  push_rel_context (List.map (fun (x,t) -> (x,None,t)) assums)
+  push_rel_context (List.map (fun (x,t) -> var_decl_of x t) assums)
 
 let push_named_rec_types (lna,typarray,_) env =
   let ctxt =
     array_map2_i
       (fun i na t ->
 	 match na with
-	   | Name id -> (id, None, lift i t)
+	   | Name id -> (id, variable_body, lift i t)
 	   | Anonymous -> anomaly "Fix declarations must be named")
       lna typarray in
   Array.fold_left
@@ -226,16 +230,13 @@ let rec lookup_rel_id id sign =
   lookrec (1,sign)
 
 (* Constructs either [forall x:t, c] or [let x:=b:t in c] *)
-let mkProd_or_LetIn (na,body,t) c =
-  match body with
-    | None -> mkProd (na, t, c)
-    | Some b -> mkLetIn (na, b, t, c)
+let mkProd_or_LetIn = mkProd_or_LetIn
 
 (* Constructs either [forall x:t, c] or [c] in which [x] is replaced by [b] *)
 let mkProd_wo_LetIn (na,body,t) c =
   match body with
-    | None -> mkProd (na,  t, c)
-    | Some b -> subst1 b c
+    | Variable annot -> Constr.mkProd ((na, annot), t, c)
+    | Definition (annot, b) -> subst1 b c
 
 let it_mkProd init = List.fold_left (fun c (n,t)  -> mkProd (n, t, c)) init
 let it_mkLambda init = List.fold_left (fun c (n,t)  -> mkLambda (n, t, c)) init
@@ -309,21 +310,23 @@ let adjust_app_array_size f1 l1 f2 l2 =
    [l]) at each binder traversal (with name [na]); it is not recursive
    and the order with which subterms are processed is not specified *)
 
+open Constr
+
 let map_constr_with_named_binders g f l c = match kind_of_term c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> c
   | Cast (c,k,t) -> mkCast (f l c, k, f l t)
-  | Prod (na,t,c) -> mkProd (na, f l t, f (g na l) c)
-  | Lambda (na,t,c) -> mkLambda (na, f l t, f (g na l) c)
-  | LetIn (na,b,t,c) -> mkLetIn (na, f l b, f l t, f (g na l) c)
-  | App (c,al) -> mkApp (f l c, Array.map (f l) al)
+  | Prod (na,t,c) -> mkProd (na, f l t, f (g (name_of na) l) c)
+  | Lambda (na,t,c) -> mkLambda (na, f l t, f (g (name_of na) l) c)
+  | LetIn (na,b,t,c) -> mkLetIn (na, f l b, f l t, f (g (letname_of na) l) c)
+  | App (c,ann,al) -> mkApp (f l c, ann, Array.map (f l) al)
   | Evar (e,al) -> mkEvar (e, Array.map (f l) al)
   | Case (ci,p,c,bl) -> mkCase (ci, f l p, f l c, Array.map (f l) bl)
   | Fix (ln,(lna,tl,bl)) ->
-      let l' = Array.fold_left (fun l na -> g na l) l lna in
+      let l' = Array.fold_left (fun l (na, ann) -> g na l) l lna in
       mkFix (ln,(lna,Array.map (f l) tl,Array.map (f l') bl))
   | CoFix(ln,(lna,tl,bl)) ->
-      let l' = Array.fold_left (fun l na -> g na l) l lna in
+      let l' = Array.fold_left (fun l (na, ann) -> g na l) l lna in
       mkCoFix (ln,(lna,Array.map (f l) tl,Array.map (f l') bl))
 
 (* [map_constr_with_binders_left_to_right g f n c] maps [f n] on the
@@ -337,7 +340,7 @@ let map_constr_with_named_binders g f l c = match kind_of_term c with
    (co-)fixpoint) *)
 
 let fold_rec_types g (lna,typarray,_) e =
-  let ctxt = array_map2_i (fun i na t -> (na, None, lift i t)) lna typarray in
+  let ctxt = array_map2_i (fun i na t -> fix_decl_of na (lift i t)) lna typarray in
   Array.fold_left (fun e assum -> g assum e) e ctxt
 
 
@@ -347,21 +350,22 @@ let map_constr_with_binders_left_to_right g f l c = match kind_of_term c with
   | Cast (c,k,t) -> let c' = f l c in mkCast (c',k,f l t)
   | Prod (na,t,c) ->
       let t' = f l t in
-      mkProd (na, t', f (g (na,None,t) l) c)
+      mkProd (na, t', f (g (var_decl_of na t) l) c)
   | Lambda (na,t,c) ->
       let t' = f l t in
-      mkLambda (na, t', f (g (na,None,t) l) c)
+      mkLambda (na, t', f (g (var_decl_of na t) l) c)
   | LetIn (na,b,t,c) ->
       let b' = f l b in
       let t' = f l t in
-      let c' = f (g (na,Some b,t) l) c in
+      let c' = f (g (def_decl_of na b t) l) c in
       mkLetIn (na, b', t', c')
-  | App (c,[||]) -> assert false
-  | App (c,al) ->
+  | App (c,_,[||]) -> assert false
+  | App (c,(cann,alann),al) ->
       (*Special treatment to be able to recognize partially applied subterms*)
-      let a = al.(Array.length al - 1) in
-      let hd = f l (mkApp (c, Array.sub al 0 (Array.length al - 1))) in
-      mkApp (hd, [| f l a |])
+      let al', a = array_decompose_last al in
+      let aln', an = array_decompose_last alann in
+      let hd = f l (mkApp (c, (cann, aln'), al')) in
+      mkApp (hd, (cann, [|an|]), [| f l a |])
   | Evar (e,al) -> mkEvar (e, array_map_left (f l) al)
   | Case (ci,p,c,bl) ->
       (* In v8 concrete syntax, predicate is after the term to match! *)
@@ -387,21 +391,21 @@ let map_constr_with_full_binders g f l cstr = match kind_of_term cstr with
       if c==c' && t==t' then cstr else mkCast (c', k, t')
   | Prod (na,t,c) ->
       let t' = f l t in
-      let c' = f (g (na,None,t) l) c in
+      let c' = f (g (var_decl_of na t) l) c in
       if t==t' && c==c' then cstr else mkProd (na, t', c')
   | Lambda (na,t,c) ->
       let t' = f l t in
-      let c' = f (g (na,None,t) l) c in
+      let c' = f (g (var_decl_of na t) l) c in
       if t==t' && c==c' then cstr else  mkLambda (na, t', c')
   | LetIn (na,b,t,c) ->
       let b' = f l b in
       let t' = f l t in
-      let c' = f (g (na,Some b,t) l) c in
+      let c' = f (g (def_decl_of na b t) l) c in
       if b==b' && t==t' && c==c' then cstr else mkLetIn (na, b', t', c')
-  | App (c,al) ->
+  | App (c,ann,al) ->
       let c' = f l c in
       let al' = Array.map (f l) al in
-      if c==c' && array_for_all2 (==) al al' then cstr else mkApp (c', al')
+      if c==c' && array_for_all2 (==) al al' then cstr else mkApp (c', ann, al')
   | Evar (e,al) ->
       let al' = Array.map (f l) al in
       if array_for_all2 (==) al al' then cstr else mkEvar (e, al')
@@ -414,7 +418,7 @@ let map_constr_with_full_binders g f l cstr = match kind_of_term cstr with
   | Fix (ln,(lna,tl,bl)) ->
       let tl' = Array.map (f l) tl in
       let l' =
-        array_fold_left2 (fun l na t -> g (na,None,t) l) l lna tl in
+        array_fold_left2 (fun l na t -> g (fix_decl_of na t) l) l lna tl in
       let bl' = Array.map (f l') bl in
       if array_for_all2 (==) tl tl' && array_for_all2 (==) bl bl'
       then cstr
@@ -422,7 +426,7 @@ let map_constr_with_full_binders g f l cstr = match kind_of_term cstr with
   | CoFix(ln,(lna,tl,bl)) ->
       let tl' = Array.map (f l) tl in
       let l' =
-        array_fold_left2 (fun l na t -> g (na,None,t) l) l lna tl in
+        array_fold_left2 (fun l na t -> g (fix_decl_of na t) l) l lna tl in
       let bl' = Array.map (f l') bl in
       if array_for_all2 (==) tl tl' && array_for_all2 (==) bl bl'
       then cstr
@@ -442,7 +446,7 @@ let fold_constr_with_binders g f n acc c = match kind_of_term c with
   | Prod (_,t,c) -> f (g n) (f n acc t) c
   | Lambda (_,t,c) -> f (g n) (f n acc t) c
   | LetIn (_,b,t,c) -> f (g n) (f n (f n acc b) t) c
-  | App (c,l) -> Array.fold_left (f n) (f n acc c) l
+  | App (c,a,l) -> Array.fold_left (f n) (f n acc c) l
   | Evar (_,l) -> Array.fold_left (f n) acc l
   | Case (_,p,c,bl) -> Array.fold_left (f n) (f n (f n acc p) c) bl
   | Fix (_,(lna,tl,bl)) ->
@@ -463,18 +467,18 @@ let iter_constr_with_full_binders g f l c = match kind_of_term c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> ()
   | Cast (c,_, t) -> f l c; f l t
-  | Prod (na,t,c) -> f l t; f (g (na,None,t) l) c
-  | Lambda (na,t,c) -> f l t; f (g (na,None,t) l) c
-  | LetIn (na,b,t,c) -> f l b; f l t; f (g (na,Some b,t) l) c
-  | App (c,args) -> f l c; Array.iter (f l) args
+  | Prod (na,t,c) -> f l t; f (g (var_decl_of na t) l) c
+  | Lambda (na,t,c) -> f l t; f (g (var_decl_of na t) l) c
+  | LetIn (na,b,t,c) -> f l b; f l t; f (g (def_decl_of na b t) l) c
+  | App (c,ann,args) -> f l c; Array.iter (f l) args
   | Evar (_,args) -> Array.iter (f l) args
   | Case (_,p,c,bl) -> f l p; f l c; Array.iter (f l) bl
   | Fix (_,(lna,tl,bl)) ->
-      let l' = array_fold_left2 (fun l na t -> g (na,None,t) l) l lna tl in
+      let l' = array_fold_left2 (fun l na t -> g (fix_decl_of na t) l) l lna tl in
       Array.iter (f l) tl;
       Array.iter (f l') bl
   | CoFix (_,(lna,tl,bl)) ->
-      let l' = array_fold_left2 (fun l na t -> g (na,None,t) l) l lna tl in
+      let l' = array_fold_left2 (fun l na t -> g (fix_decl_of na t) l) l lna tl in
       Array.iter (f l) tl;
       Array.iter (f l') bl
 
@@ -573,8 +577,9 @@ let dependent_main noevar m t =
       raise Occur
     else
       match kind_of_term m, kind_of_term t with
-	| App (fm,lm), App (ft,lt) when Array.length lm < Array.length lt ->
-	    deprec m (mkApp (ft,Array.sub lt 0 (Array.length lm)));
+	| App (fm,(am,ams),lm), App (ft,(at,ats),lt) when Array.length lm < Array.length lt ->
+	    deprec m 
+	    (mkApp (ft, (at, Array.sub ats 0 (Array.length lm)), Array.sub lt 0 (Array.length lm)));
 	    Array.iter (deprec m)
 	      (Array.sub lt
 		(Array.length lm) ((Array.length lt) - (Array.length lm)))
@@ -594,8 +599,9 @@ let count_occurrences m t =
       incr n
     else
       match kind_of_term m, kind_of_term t with
-	| App (fm,lm), App (ft,lt) when Array.length lm < Array.length lt ->
-	    countrec m (mkApp (ft,Array.sub lt 0 (Array.length lm)));
+	| App (fm,am,lm), App (ft,(at,ats),lt) when Array.length lm < Array.length lt ->
+	    countrec m (mkApp (ft,(at,Array.sub ats 0 (Array.length lm)),
+			       Array.sub lt 0 (Array.length lm)));
 	    Array.iter (countrec m)
 	      (Array.sub lt
 		(Array.length lm) ((Array.length lt) - (Array.length lm)))
@@ -629,12 +635,12 @@ let rec subst_meta bl c =
 let prefix_application eq_fun (k,c) (t : constr) =
   let c' = collapse_appl c and t' = collapse_appl t in
   match kind_of_term c', kind_of_term t' with
-    | App (f1,cl1), App (f2,cl2) ->
+    | App (f1,a1,cl1), App (f2,(a2,as2),cl2) ->
 	let l1 = Array.length cl1
 	and l2 = Array.length cl2 in
 	if l1 <= l2
-	   && eq_fun c' (mkApp (f2, Array.sub cl2 0 l1)) then
-	  Some (mkApp (mkRel k, Array.sub cl2 l1 (l2 - l1)))
+	   && eq_fun c' (mkApp (f2,(a2,Array.sub as2 0 l1),Array.sub cl2 0 l1)) then
+	  Some (mkApp (mkRel k, (a2,Array.sub as2 l1 (l2 - l1)), Array.sub cl2 l1 (l2 - l1)))
 	else
 	  None
     | _ -> None
@@ -642,12 +648,12 @@ let prefix_application eq_fun (k,c) (t : constr) =
 let my_prefix_application eq_fun (k,c) (by_c : constr) (t : constr) =
   let c' = collapse_appl c and t' = collapse_appl t in
   match kind_of_term c', kind_of_term t' with
-    | App (f1,cl1), App (f2,cl2) ->
+    | App (f1,a1,cl1), App (f2,(a2,as2),cl2) ->
 	let l1 = Array.length cl1
 	and l2 = Array.length cl2 in
 	if l1 <= l2
-	   && eq_fun c' (mkApp (f2, Array.sub cl2 0 l1)) then
-	  Some (mkApp ((lift k by_c), Array.sub cl2 l1 (l2 - l1)))
+	   && eq_fun c' (mkApp (f2,(a2,Array.sub as2 0 l1),Array.sub cl2 0 l1)) then
+	  Some (mkApp ((lift k by_c),(a2,Array.sub as2 l1 (l2 - l1)), Array.sub cl2 l1 (l2 - l1)))
 	else
 	  None
     | _ -> None
@@ -802,19 +808,23 @@ let subst_closed_term_occ_modulo plocs test cl t =
   proceed_with_occurrences
     (subst_closed_term_occ_gen_modulo plocs test cl) plocs t
 
+let constr_of_body = function
+  | Variable _ -> None
+  | Definition (_, c) -> Some c
+
 let map_named_declaration_with_hyploc f hyploc acc (id,bodyopt,typ) =
   let f = f (Some (id,hyploc)) in
   match bodyopt,hyploc with
-  | None, InHypValueOnly ->
+  | Variable _, InHypValueOnly ->
       errorlabstrm "" (pr_id id ++ str " has no value.")
-  | None, _ | Some _, InHypTypeOnly ->
+  | Variable _, _ | Definition _, InHypTypeOnly ->
       let acc,typ = f acc typ in acc,(id,bodyopt,typ)
-  | Some body, InHypValueOnly ->
-      let acc,body = f acc body in acc,(id,Some body,typ)
-  | Some body, InHyp ->
+  | Definition (ann, body), InHypValueOnly ->
+      let acc,body = f acc body in acc,(id,Definition (ann, body),typ)
+  | Definition (ann, body), InHyp ->
       let acc,body = f acc body in
       let acc,typ = f acc typ in
-      acc,(id,Some body,typ)
+      acc,(id,Definition (ann, body),typ)
 
 let subst_closed_term_occ_decl (plocs,hyploc) c d =
   proceed_with_occurrences
@@ -909,11 +919,10 @@ let eq_constr = constr_cmp Reduction.CONV
 (* App(c,[t1,...tn]) -> ([c,t1,...,tn-1],tn)
    App(c,[||]) -> ([],c) *)
 let split_app c = match kind_of_term c with
-    App(c,l) ->
+    App(c,(a,ans),l) ->
       let len = Array.length l in
       if len=0 then ([],c) else
-	let last = Array.get l (len-1) in
-	let prev = Array.sub l 0 (len-1) in
+	let prev, last = array_decompose_last l in
 	c::(Array.to_list prev), last
   | _ -> assert false
 
@@ -940,7 +949,7 @@ let filtering env cv_pb c1 c2 =
 	      aux env cv_pb (applist (hdtl p1)) (applist (hdtl p2))
       | Prod (n,t1,c1), Prod (_,t2,c2) ->
 	  aux env cv_pb t1 t2;
-	  aux ((n,None,t1)::env) cv_pb c1 c2
+	  aux (var_decl_of n t1::env) cv_pb c1 c2
       | _, Evar (ev,_) -> define cv_pb env ev c1
       | Evar (ev,_), _ -> define cv_pb env ev c2
       | _ ->
@@ -952,10 +961,10 @@ let filtering env cv_pb c1 c2 =
   aux env cv_pb c1 c2; !evm
 
 let decompose_prod_letin : constr -> int * rel_context * constr =
-  let rec prodec_rec i l c = match kind_of_term c with
-    | Prod (n,t,c)    -> prodec_rec (succ i) ((n,None,t)::l) c
-    | LetIn (n,d,t,c) -> prodec_rec (succ i) ((n,Some d,t)::l) c
-    | Cast (c,_,_)    -> prodec_rec i l c
+  let rec prodec_rec i l c = match Constr.kind_of_term c with
+    | Constr.Prod (n,t,c)    -> prodec_rec (succ i) (var_decl_of n t::l) c
+    | Constr.LetIn (n,d,t,c) -> prodec_rec (succ i) (def_decl_of n d t::l) c
+    | Constr.Cast (c,_,_)    -> prodec_rec i l c
     | _               -> i,l,c in
   prodec_rec 0 []
 
@@ -964,7 +973,7 @@ let align_prod_letin c a : rel_context * constr =
   let (la,l,a) = decompose_prod_letin a in
   if not (la >= lc) then invalid_arg "align_prod_letin";
   let (l1,l2) = Util.list_chop lc l in
-  l2,it_mkProd_or_LetIn a l1
+  l2, Term.it_mkProd_or_LetIn a l1
 
 (* On reduit une serie d'eta-redex de tete ou rien du tout  *)
 (* [x1:c1;...;xn:cn]@(f;a1...an;x1;...;xn) --> @(f;a1...an) *)
@@ -974,7 +983,7 @@ let rec eta_reduce_head c =
   match kind_of_term c with
     | Lambda (_,c1,c') ->
 	(match kind_of_term (eta_reduce_head c') with
-           | App (f,cl) ->
+           | App (f,(fa,cla),cl) ->
                let lastn = (Array.length cl) - 1 in
                if lastn < 1 then anomaly "application without arguments"
                else
@@ -982,7 +991,7 @@ let rec eta_reduce_head c =
                     | Rel 1 ->
 			let c' =
                           if lastn = 1 then f
-			  else mkApp (f, Array.sub cl 0 lastn)
+			  else mkApp (f, (fa,Array.sub cla 0 lastn), Array.sub cl 0 lastn)
 			in
 			if noccurn 1 c'
                         then lift (-1) c'
@@ -1008,13 +1017,11 @@ let process_rel_context f env =
   let env0 = reset_with_named_context sign env in
   Sign.fold_rel_context f rels ~init:env0
 
+(* FIXME: returns ill-formed terms *)
 let assums_of_rel_context sign =
   Sign.fold_rel_context
-    (fun (na,c,t) l ->
-      match c with
-          Some _ -> l
-        | None -> (na, t)::l)
-    sign ~init:[]
+  (fun (na,c,t) l -> cata_body (fun _ -> l) ((na, t) :: l) c)
+  sign ~init:[]
 
 let map_rel_context_in_env f env sign =
   let rec aux env acc = function
@@ -1041,8 +1048,8 @@ let lift_rel_context n =
 let smash_rel_context sign =
   let rec aux acc = function
   | [] -> acc
-  | (_,None,_ as d) :: l -> aux (d::acc) l
-  | (_,Some b,_) :: l ->
+  | (_,Variable _,_ as d) :: l -> aux (d::acc) l
+  | (_,Definition (rel, b),_) :: l ->
       (* Quadratic in the number of let but there are probably a few of them *)
       aux (List.rev (substl_rel_context [b] (List.rev acc))) l
   in List.rev (aux [] sign)
@@ -1050,8 +1057,8 @@ let smash_rel_context sign =
 let adjust_subst_to_rel_context sign l =
   let rec aux subst sign l =
     match sign, l with
-    | (_,None,_)::sign', a::args' -> aux (a::subst) sign' args'
-    | (_,Some c,_)::sign', args' ->
+    | (_,Variable _,_)::sign', a::args' -> aux (a::subst) sign' args'
+    | (_,Definition (_, c),_)::sign', args' ->
 	aux (substl (List.rev subst) c :: subst) sign' args'
     | [], [] -> List.rev subst
     | _ -> anomaly "Instance and signature do not match"
@@ -1066,17 +1073,14 @@ let rec mem_named_context id = function
 
 let clear_named_body id env =
   let rec aux _ = function
-  | (id',Some c,t) when id = id' -> push_named (id,None,t)
+  | (id', Definition (irr,c),t) when id = id' -> push_named (id, Variable (irr, false), t)
   | d -> push_named d in
   fold_named_context aux env ~init:(reset_context env)
 
 let global_vars env ids = Idset.elements (global_vars_set env ids)
 
-let global_vars_set_of_decl env = function
-  | (_,None,t) -> global_vars_set env t
-  | (_,Some c,t) ->
-      Idset.union (global_vars_set env t)
-        (global_vars_set env c)
+let global_vars_set_of_decl env d = 
+  fold_named_declaration (fun c -> Idset.union (global_vars_set env c)) d Idset.empty
 
 let dependency_closure env sign hyps =
   if Idset.is_empty hyps then [] else
@@ -1102,7 +1106,7 @@ let on_judgment_type f j = { j with uj_type = f j.uj_type }
 let context_chop k ctx =
   let rec chop_aux acc = function
     | (0, l2) -> (List.rev acc, l2)
-    | (n, ((_,Some _,_ as h)::t)) -> chop_aux (h::acc) (n, t)
+    | (n, ((_,Definition _,_ as h)::t)) -> chop_aux (h::acc) (n, t)
     | (n, (h::t)) -> chop_aux (h::acc) (pred n, t)
     | (_, []) -> anomaly "context_chop"
   in chop_aux [] (k,ctx)
@@ -1130,5 +1134,5 @@ let coq_unit_judge =
 	make_judge id type_of_id
     | None ->
 	(* In case the constants id/ID are not defined *)
-	make_judge (mkLambda (na1,mkProp,mkLambda(na2,mkRel 1,mkRel 1)))
-                 (mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2)))
+	make_judge (Term.mkLambda (na1,mkProp,Term.mkLambda(na2,mkRel 1,mkRel 1)))
+                 (Term.mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2)))

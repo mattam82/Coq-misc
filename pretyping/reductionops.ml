@@ -292,16 +292,24 @@ let reduce_fix whdfun sigma fix stack =
                               -------------------
    qui coute cher *)
 
+let lookup_rel_body n env =
+  constr_of_body (pi2 (lookup_rel n env))
+
+let lookup_named_body n env =
+  constr_of_body (pi2 (lookup_named n env))
+
+open Constr
+
 let rec whd_state_gen flags ts env sigma =
   let rec whrec (x, stack as s) =
     match kind_of_term x with
       | Rel n when red_delta flags ->
-	  (match lookup_rel n env with
-	     | (_,Some body,_) -> whrec (lift n body, stack)
-	     | _ -> s)
+	  (match lookup_rel_body n env with
+	   | Some body -> whrec (lift n body, stack)
+	   | _ -> s)
       | Var id when red_delta flags ->
-	  (match lookup_named id env with
-	     | (_,Some body,_) -> whrec (body, stack)
+	  (match lookup_named_body id env with
+	     | Some body -> whrec (body, stack)
 	     | _ -> s)
       | Evar ev ->
 	  (match safe_evar_value sigma ev with
@@ -317,15 +325,15 @@ let rec whd_state_gen flags ts env sigma =
 	     | None -> s)
       | LetIn (_,b,_,c) when red_zeta flags -> stacklam whrec [b] c stack
       | Cast (c,_,_) -> whrec (c, stack)
-      | App (f,cl)  -> whrec (f, append_stack cl stack)
+      | App (f,(c,ca),cl)  -> whrec (f, append_stack cl stack)
       | Lambda (na,t,c) ->
           (match decomp_stack stack with
              | Some (a,m) when red_beta flags -> stacklam whrec [a] c m
              | None when red_eta flags ->
-		 let env' = push_rel (na,None,t) env in
+		 let env' = push_rel (var_decl_of na t) env in
 		 let whrec' = whd_state_gen flags ts env' sigma in
                  (match kind_of_term (app_stack (whrec' (c, empty_stack))) with
-                    | App (f,cl) ->
+                    | App (f,ca,cl) ->
 			let napp = Array.length cl in
 			if napp > 0 then
 			  let x', l' = whrec' (array_last cl, empty_stack) in
@@ -362,13 +370,13 @@ let local_whd_state_gen flags sigma =
     match kind_of_term x with
       | LetIn (_,b,_,c) when red_zeta flags -> stacklam whrec [b] c stack
       | Cast (c,_,_) -> whrec (c, stack)
-      | App (f,cl)  -> whrec (f, append_stack cl stack)
+      | App (f,_,cl)  -> whrec (f, append_stack cl stack)
       | Lambda (_,_,c) ->
           (match decomp_stack stack with
              | Some (a,m) when red_beta flags -> stacklam whrec [a] c m
              | None when red_eta flags ->
                  (match kind_of_term (app_stack (whrec (c, empty_stack))) with
-                    | App (f,cl) ->
+                    | App (f,_,cl) ->
 			let napp = Array.length cl in
 			if napp > 0 then
 			  let x', l' = whrec (array_last cl, empty_stack) in
@@ -561,7 +569,7 @@ let rec whd_betaiota_preserving_vm_cast env sigma t =
            (mkCast(c,VMcast,t),stack)
        | Cast (c,DEFAULTcast,_) ->
            whrec (c, stack)
-       | App (f,cl)  -> whrec (f, append_stack cl stack)
+       | App (f,_,cl)  -> whrec (f, append_stack cl stack)
        | Lambda (na,t,c) ->
            (match decomp_stack stack with
             | Some (a,m) -> stacklam_var [a] c m
@@ -639,7 +647,7 @@ let whd_meta sigma c = match kind_of_term c with
 let plain_instance s c =
   let rec irec n u = match kind_of_term u with
     | Meta p -> (try lift n (List.assoc p s) with Not_found -> u)
-    | App (f,l) when isCast f ->
+    | App (f,a,l) when isCast f ->
         let (f,_,t) = destCast f in
         let l' = Array.map (irec n) l in
         (match kind_of_term f with
@@ -651,10 +659,10 @@ let plain_instance s c =
 	    match kind_of_term g with
             | App _ ->
                 let h = id_of_string "H" in
-                mkLetIn (Name h,g,t,mkApp(mkRel 1,Array.map (lift 1) l'))
-            | _ -> mkApp (g,l')
-	    with Not_found -> mkApp (f,l'))
-        | _ -> mkApp (irec n f,l'))
+                mkLetIn ((Name h,Expl),g,t,mkApp(mkRel 1,a,Array.map (lift 1) l'))
+            | _ -> mkApp (g,a,l')
+	    with Not_found -> mkApp (f,a,l'))
+        | _ -> mkApp (irec n f,a,l'))
     | Cast (m,_,_) when isMeta m ->
 	(try lift n (List.assoc (destMeta m) s) with Not_found -> u)
     | _ ->
@@ -733,7 +741,7 @@ let splay_prod env sigma =
     let t = whd_betadeltaiota env sigma c in
     match kind_of_term t with
       | Prod (n,a,c0) ->
-	  decrec (push_rel (n,None,a) env)
+	  decrec (push_rel (var_decl_of n a) env)
 	    ((n,a)::m) c0
       | _ -> m,t
   in
@@ -744,7 +752,7 @@ let splay_lam env sigma =
     let t = whd_betadeltaiota env sigma c in
     match kind_of_term t with
       | Lambda (n,a,c0) ->
-	  decrec (push_rel (n,None,a) env)
+	  decrec (push_rel (var_decl_of n a) env)
 	    ((n,a)::m) c0
       | _ -> m,t
   in
@@ -755,11 +763,13 @@ let splay_prod_assum env sigma =
     let t = whd_betadeltaiota_nolet env sigma c in
     match kind_of_term t with
     | Prod (x,t,c)  ->
-	prodec_rec (push_rel (x,None,t) env)
-	  (add_rel_decl (x, None, t) l) c
+      let d = var_decl_of x t in
+	prodec_rec (push_rel d env)
+	  (add_rel_decl d l) c
     | LetIn (x,b,t,c) ->
-	prodec_rec (push_rel (x, Some b, t) env)
-	  (add_rel_decl (x, Some b, t) l) c
+      let d = def_decl_of x b t in
+	prodec_rec (push_rel d env)
+	  (add_rel_decl d l) c
     | Cast (c,_,_)    -> prodec_rec env l c
     | _               -> l,t
   in
@@ -777,8 +787,8 @@ let splay_prod_n env sigma n =
   let rec decrec env m ln c = if m = 0 then (ln,c) else
     match kind_of_term (whd_betadeltaiota env sigma c) with
       | Prod (n,a,c0) ->
-	  decrec (push_rel (n,None,a) env)
-	    (m-1) (add_rel_decl (n,None,a) ln) c0
+	  decrec (push_rel (var_decl_of n a) env)
+	    (m-1) (add_rel_decl (var_decl_of n a) ln) c0
       | _                      -> invalid_arg "splay_prod_n"
   in
   decrec env n empty_rel_context
@@ -787,8 +797,8 @@ let splay_lam_n env sigma n =
   let rec decrec env m ln c = if m = 0 then (ln,c) else
     match kind_of_term (whd_betadeltaiota env sigma c) with
       | Lambda (n,a,c0) ->
-	  decrec (push_rel (n,None,a) env)
-	    (m-1) (add_rel_decl (n,None,a) ln) c0
+	  decrec (push_rel (var_decl_of n a) env)
+	    (m-1) (add_rel_decl (var_decl_of n a) ln) c0
       | _                      -> invalid_arg "splay_lam_n"
   in
   decrec env n empty_rel_context
@@ -835,13 +845,13 @@ let whd_betaiota_deltazeta_for_iota_state ts env sigma s =
 let whd_programs_stack env sigma =
   let rec whrec (x, stack as s) =
     match kind_of_term x with
-      | App (f,cl) ->
+      | App (f,(af,al),cl) ->
 	  let n = Array.length cl - 1 in
 	  let c = cl.(n) in
 	  if occur_existential c then
 	    s
 	  else
-	    whrec (mkApp (f, Array.sub cl 0 n), append_stack [|c|] stack)
+	    whrec (mkApp (f, (af,Array.sub al 0 n), Array.sub cl 0 n), append_stack [|c|] stack)
       | LetIn (_,b,_,c) ->
 	  if occur_existential b then
 	    s
@@ -879,8 +889,8 @@ let find_conclusion env sigma =
   let rec decrec env c =
     let t = whd_betadeltaiota env sigma c in
     match kind_of_term t with
-      | Prod (x,t,c0) -> decrec (push_rel (x,None,t) env) c0
-      | Lambda (x,t,c0) -> decrec (push_rel (x,None,t) env) c0
+      | Prod (x,t,c0) -> decrec (push_rel (var_decl_of x t) env) c0
+      | Lambda (x,t,c0) -> decrec (push_rel (var_decl_of x t) env) c0
       | t -> t
   in
   decrec env
@@ -934,7 +944,7 @@ let meta_reducible_instance evd b =
 	  with
 	    | Some g -> irec (mkCase (ci,p,g,bl))
 	    | None -> mkCase (ci,irec p,c,Array.map irec bl))
-    | App (f,l) when isMeta f or isCast f & isMeta (pi1 (destCast f)) ->
+    | App (f,a,l) when isMeta f or isCast f & isMeta (pi1 (destCast f)) ->
 	let m = try destMeta f with _ -> destMeta (pi1 (destCast f)) in
 	(match
 	  try
@@ -942,8 +952,8 @@ let meta_reducible_instance evd b =
 	    if isLambda g or s <> CoerceToType then Some g else None
 	  with Not_found -> None
 	 with
-	   | Some g -> irec (mkApp (g,l))
-	   | None -> mkApp (f,Array.map irec l))
+	   | Some g -> irec (mkApp (g,a,l))
+	   | None -> mkApp (f,a,Array.map irec l))
     | Meta m ->
 	(try let g,s = List.assoc m metas in if s<>CoerceToType then irec g else u
 	 with Not_found -> u)

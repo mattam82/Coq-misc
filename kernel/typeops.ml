@@ -17,6 +17,7 @@ open Entries
 open Reduction
 open Inductive
 open Type_errors
+open Constr
 
 let conv_leq l2r = default_conv CUMUL ~l2r
 
@@ -37,10 +38,16 @@ let type_judgment env j =
     | Sort s -> {utj_val = j.uj_val; utj_type = s }
     | _ -> error_not_type env j
 
+let relevance_of_sort = function
+  | Prop Null -> Irr
+  | _ -> Expl
+
 (* This should be a type intended to be assumed. The error message is *)
 (* not as useful as for [type_judgment]. *)
 let assumption_of_judgment env j =
-  try (type_judgment env j).utj_val
+  try 
+    let j = type_judgment env j in
+      j.utj_val, relevance_of_sort j.utj_type
   with TypeError _ ->
     error_assumption env j
 
@@ -128,7 +135,9 @@ let extract_level env p =
 
 let extract_context_levels env =
   List.fold_left
-    (fun l (_,b,p) -> if b=None then extract_level env p::l else l) []
+    (fun l (_,b,p) -> 
+     cata_body (fun _ -> l)
+       (extract_level env p::l) b) []
 
 let make_polymorphic_if_constant_for_ind env {uj_val = c; uj_type = t} =
   let params, ccl = dest_prod_assum env t in
@@ -191,19 +200,26 @@ let judge_of_letin env name defj typj j =
 
 (* Type of an application. *)
 
-let judge_of_apply env funj argjv =
+let judge_of_apply env funj funjty (rel,rels) argjv =
   let rec apply_rec n typ cst = function
-    | [] ->
-	{ uj_val  = mkApp (j_val funj, Array.map j_val argjv);
-          uj_type = typ },
-	cst
-    | hj::restjl ->
-        (match kind_of_term (whd_betadeltaiota env typ) with
-          | Prod (_,c1,c2) ->
+    | [], [] ->
+      let funjirr = relevance_of_sort funjty.utj_type in
+	if funjirr <> rel then
+	  error_relevance_mismatch env funjty.utj_val funjirr rel
+	else
+	  { uj_val  = mkApp (j_val funj, (rel, rels), Array.map j_val argjv);
+            uj_type = typ }, cst
+    | irr::restrels, hj::restjl ->
+      let red = whd_betadeltaiota env typ in
+        (match kind_of_term red with
+          | Prod ((na,(irr',_)),c1,c2) ->
+	    if irr' <> irr then 
+	      error_relevance_mismatch env red irr irr'
+	    else
 	      (try
 		let c = conv_leq false env hj.uj_type c1 in
 		let cst' = union_constraints cst c in
-		apply_rec (n+1) (subst1 hj.uj_val c2) cst' restjl
+		apply_rec (n+1) (subst1 hj.uj_val c2) cst' (restrels, restjl)
 	      with NotConvertible ->
 		error_cant_apply_bad_type env
 		  (n,c1, hj.uj_type)
@@ -211,11 +227,13 @@ let judge_of_apply env funj argjv =
 
           | _ ->
 	      error_cant_apply_not_functional env funj argjv)
+    | _, _ -> anomaly 
+      ("Ill-formed application node: mismatch between arguments and relevance annotations")
   in
   apply_rec 1
     funj.uj_type
     empty_constraint
-    (Array.to_list argjv)
+    (Array.to_list rels, Array.to_list argjv)
 
 (* Type of product *)
 
@@ -363,7 +381,19 @@ let type_fixpoint env lna lar vdefj =
 let univ_combinator (cst,univ) (j,c') =
   (j,(union_constraints cst c', merge_constraints c' univ))
 
-(* The typing machine. *)
+let var_decl_of env (na, (irr, impl) as decl) {utj_val = ty; utj_type = s} =
+  let irr' = relevance_of_sort s in
+  if irr = irr' then (* Well-sorted and tagged *)
+    var_decl_of decl ty
+  else error_relevance_mismatch env ty irr irr'
+
+let def_decl_of env (na, irr as decl) t {utj_val = ty; utj_type = s} =
+  let irr' = relevance_of_sort s in
+  if irr = irr' then (* Well-sorted and tagged *)
+    def_decl_of decl t ty
+  else error_relevance_mismatch env ty irr irr'
+
+(* the typing machine. *)
     (* ATTENTION : faudra faire le typage du contexte des Const,
     Ind et Constructsi un jour cela devient des constructions
     arbitraires et non plus des variables *)
@@ -386,7 +416,7 @@ let rec execute env cstr cu =
         (judge_of_constant env c, cu)
 
     (* Lambda calculus operators *)
-    | App (f,args) ->
+    | App (f,impls,args) ->
         let (jl,cu1) = execute_array env args cu in
 	let (j,cu2) =
 	  match kind_of_term f with
@@ -400,17 +430,18 @@ let rec execute env cstr cu =
 		(* No sort-polymorphism *)
 		execute env f cu1
 	in
-	univ_combinator cu2 (judge_of_apply env j jl)
+	let (j',cu3) = execute_type env j.uj_type cu2 in
+	  univ_combinator cu3 (judge_of_apply env j j' impls jl)
 
     | Lambda (name,c1,c2) ->
         let (varj,cu1) = execute_type env c1 cu in
-	let env1 = push_rel (name,None,varj.utj_val) env in
+	let env1 = push_rel (var_decl_of env name varj) env in
         let (j',cu2) = execute env1 c2 cu1 in
         (judge_of_abstraction env name varj j', cu2)
 
     | Prod (name,c1,c2) ->
         let (varj,cu1) = execute_type env c1 cu in
-	let env1 = push_rel (name,None,varj.utj_val) env in
+	let env1 = push_rel (var_decl_of env name varj) env in
         let (varj',cu2) = execute_type env1 c2 cu1 in
 	(judge_of_product env name varj varj', cu2)
 
@@ -419,7 +450,7 @@ let rec execute env cstr cu =
         let (j2,cu2) = execute_type env c2 cu1 in
         let (_,cu3) =
 	  univ_combinator cu2 (judge_of_cast env j1 DEFAULTcast j2) in
-        let env1 = push_rel (name,Some j1.uj_val,j2.utj_val) env in
+        let env1 = push_rel (def_decl_of env name j1.uj_val j2) env in
         let (j',cu4) = execute env1 c3 cu3 in
         (judge_of_letin env name j1 j2 j', cu4)
 
@@ -469,6 +500,12 @@ and execute_type env constr cu =
 and execute_recdef env (names,lar,vdef) i cu =
   let (larj,cu1) = execute_array env lar cu in
   let lara = Array.map (assumption_of_judgment env) larj in
+  let lara = 
+    array_map2 (fun (c, rel) (n, rel') ->
+		if rel <> rel' then
+		  error_relevance_mismatch env c rel rel'
+		else c) lara names 
+  in
   let env1 = push_rec_types (names,lara,vdef) env in
   let (vdefj,cu2) = execute_array env1 vdef cu1 in
   let vdefv = Array.map j_val vdefj in
@@ -499,11 +536,15 @@ let infer_v env cv =
 
 let infer_local_decl env id = function
   | LocalDef c ->
-      let (j,cst) = infer env c in
-      (Name id, Some j.uj_val, j.uj_type), cst
+      let (j, cst) = execute env c (empty_constraint, universes env) in
+      let (j', cst) = execute_type env j.uj_type cst in
+      let def = Definition (relevance_of_sort j'.utj_type, j.uj_val) in
+	(Name id, def, j.uj_type), (fst cst)
   | LocalAssum c ->
-      let (j,cst) = infer env c in
-      (Name id, None, assumption_of_judgment env j), cst
+    let (j,cst) = execute env c (empty_constraint, universes env) in
+    let ty, irr = assumption_of_judgment env j in
+    let body = Variable (irr, false) in
+      (Name id, body, ty), (fst cst)
 
 let infer_local_decls env decls =
   let rec inferec env = function
@@ -520,3 +561,7 @@ let typing env c =
   let (j,cst) = infer env c in
   let _ = add_constraints cst env in
   j
+
+let relevance_of_type env ty = 
+  let (j, _) = execute_type env ty (empty_constraint, universes env) in
+    relevance_of_sort j.utj_type
