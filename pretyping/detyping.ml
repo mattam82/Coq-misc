@@ -547,6 +547,7 @@ let rec detype_rel_context where avoid env sign =
   let rec aux avoid env = function
   | [] -> []
   | (na,b,t)::rest ->
+      let b = constr_of_body b in
       let na',avoid' =
 	match where with
 	| None -> na,avoid

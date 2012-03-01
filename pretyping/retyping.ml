@@ -17,6 +17,8 @@ open Typeops
 open Declarations
 open Termops
 
+open Constr
+
 let rec subst_type env sigma typ = function
   | [] -> typ
   | h::rest ->
@@ -32,7 +34,7 @@ let rec subst_type env sigma typ = function
 let sort_of_atomic_type env sigma ft args =
   let rec concl_of_arity env ar =
     match kind_of_term (whd_betadeltaiota env sigma ar) with
-    | Prod (na, t, b) -> concl_of_arity (push_rel (na,None,t) env) b
+    | Prod (na, t, b) -> concl_of_arity (push_rel (var_decl_of na t) env) b
     | Sort s -> s
     | _ -> decomp_sort env sigma (subst_type env sigma ft (Array.to_list args))
   in concl_of_arity env ft
@@ -65,15 +67,15 @@ let retype ?(polyprop=true) sigma =
           | Prod _ -> whd_beta sigma (applist (t, [c]))
           | _ -> t)
     | Lambda (name,c1,c2) ->
-          mkProd (name, c1, type_of (push_rel (name,None,c1) env) c2)
+          mkProd (name, c1, type_of (push_rel (var_decl_of name c1) env) c2)
     | LetIn (name,b,c1,c2) ->
-         subst1 b (type_of (push_rel (name,Some b,c1) env) c2)
+         subst1 b (type_of (push_rel (def_decl_of name b c1) env) c2)
     | Fix ((_,i),(_,tys,_)) -> tys.(i)
     | CoFix (i,(_,tys,_)) -> tys.(i)
-    | App(f,args) when isGlobalRef f ->
+    | App(f,ann,args) when isGlobalRef f ->
 	let t = type_of_global_reference_knowing_parameters env f args in
         strip_outer_cast (subst_type env sigma t (Array.to_list args))
-    | App(f,args) ->
+    | App(f,ann,args) ->
         strip_outer_cast
           (subst_type env sigma (type_of env f) (Array.to_list args))
     | Cast (c,_, t) -> t
@@ -85,7 +87,7 @@ let retype ?(polyprop=true) sigma =
     | Sort (Prop c) -> type1_sort
     | Sort (Type u) -> Type (Univ.super u)
     | Prod (name,t,c2) ->
-        (match (sort_of env t, sort_of (push_rel (name,None,t) env) c2) with
+        (match (sort_of env t, sort_of (push_rel (var_decl_of name t) env) c2) with
 	  | _, (Prop Null as s) -> s
           | Prop _, (Prop Pos as s) -> s
           | Type _, (Prop Pos as s) when
@@ -96,10 +98,10 @@ let retype ?(polyprop=true) sigma =
 	  | Prop Pos, (Type u2) -> Type (Univ.sup Univ.type0_univ u2)
 	  | Prop Null, (Type _ as s) -> s
 	  | Type u1, Type u2 -> Type (Univ.sup u1 u2)*))
-    | App(f,args) when isGlobalRef f ->
+    | App(f,ann,args) when isGlobalRef f ->
 	let t = type_of_global_reference_knowing_parameters env f args in
         sort_of_atomic_type env sigma t args
-    | App(f,args) -> sort_of_atomic_type env sigma (type_of env f) args
+    | App(f,ann,args) -> sort_of_atomic_type env sigma (type_of env f) args
     | Lambda _ | Fix _ | Construct _ ->
         anomaly "sort_of: Not a type (1)"
     | _ -> decomp_sort env sigma (type_of env t)
@@ -110,13 +112,13 @@ let retype ?(polyprop=true) sigma =
     | Sort (Prop c) -> InType
     | Sort (Type u) -> InType
     | Prod (name,t,c2) ->
-	let s2 = sort_family_of (push_rel (name,None,t) env) c2 in
+	let s2 = sort_family_of (push_rel (var_decl_of name t) env) c2 in
 	if Environ.engagement env <> Some ImpredicativeSet &&
 	   s2 = InSet & sort_family_of env t = InType then InType else s2
-    | App(f,args) when isGlobalRef f ->
+    | App(f,ann,args) when isGlobalRef f ->
 	let t = type_of_global_reference_knowing_parameters env f args in
         family_of_sort (sort_of_atomic_type env sigma t args)
-    | App(f,args) ->
+    | App(f,ann,args) ->
 	family_of_sort (sort_of_atomic_type env sigma (type_of env f) args)
     | Lambda _ | Fix _ | Construct _ ->
         anomaly "sort_of: Not a type (1)"

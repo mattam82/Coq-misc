@@ -18,8 +18,8 @@ open Cooking
 (* Discharging mutual inductive *)
 
 let detype_param = function
-  | (Name id,None,p) -> id, Entries.LocalAssum p
-  | (Name id,Some p,_) -> id, Entries.LocalDef p
+  | (Name id,Variable _,p) -> id, Entries.LocalAssum p
+  | (Name id,Definition (_, p),_) -> id, Entries.LocalDef p
   | (Anonymous,_,_) -> anomaly"Unnamed inductive local variable"
 
 (* Replace

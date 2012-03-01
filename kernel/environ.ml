@@ -116,21 +116,10 @@ let eq_named_context_val c1 c2 =
 
 (* A local const is evaluable if it is defined  *)
 
-let named_type id env =
-  let (_,_,t) = lookup_named id env in t
-
-let named_body id env =
-  let (_,b,_) = lookup_named id env in b
-
-let evaluable_named id env =
-  match named_body id env with
-  | Definition _      -> true
-  | _                 -> false
-
-let named_value id env =
-  match named_body id env with
-  | Definition (_, c) -> Some c
-  | Variable _ -> None
+let named_type id env = Sign.named_type id env.env_named_context
+let evaluable_named id env = Sign.evaluable_named id env.env_named_context
+let named_body id env = Sign.named_body id env.env_named_context
+let named_value id env = Sign.named_value id env.env_named_context
 
 let reset_with_named_context (ctxt,ctxtv) env =
   { env with

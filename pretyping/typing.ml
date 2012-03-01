@@ -19,6 +19,8 @@ open Typeops
 open Evd
 open Arguments_renaming
 
+open Constr
+
 let meta_type evd mv =
   let ty =
     try Evd.meta_ftype evd mv
@@ -42,10 +44,10 @@ let e_type_judgment env evdref j =
         evdref := evd; { utj_val = j.uj_val; utj_type = s }
     | _ -> error_not_type env j
 
-let e_judge_of_apply env evdref funj argjv =
+let e_judge_of_apply env evdref funj ann argjv =
   let rec apply_rec n typ = function
   | [] ->
-      { uj_val  = mkApp (j_val funj, Array.map j_val argjv);
+      { uj_val  = mkApp (j_val funj, ann, Array.map j_val argjv);
         uj_type = typ }
   | hj::restjl ->
       match kind_of_term (whd_betadeltaiota env !evdref typ) with
@@ -83,15 +85,15 @@ let e_is_correct_arity env evdref c pj ind specif params =
   let rec srec env pt ar =
     let pt' = whd_betadeltaiota env !evdref pt in
     match kind_of_term pt', ar with
-    | Prod (na1,a1,t), (_,None,a1')::ar' ->
+    | Prod (na1,a1,t), (_,Variable _,a1')::ar' ->
         if not (Evarconv.e_cumul env evdref a1 a1') then error ();
-        srec (push_rel (na1,None,a1) env) t ar'
+        srec (push_rel (var_decl_of na1 a1) env) t ar'
     | Sort s, [] ->
         if not (List.mem (family_of_sort s) allowed_sorts) then error ()
     | Evar (ev,_), [] ->
         let s = Termops.new_sort_in_family (max_sort allowed_sorts) in
         evdref := Evd.define ev (mkSort s) !evdref
-    | _, (_,Some _,_ as d)::ar' ->
+    | _, (_,Definition _,_ as d)::ar' ->
         srec (push_rel d env) (lift 1 pt') ar'
     | _ ->
         error ()
@@ -150,7 +152,7 @@ let rec execute env evdref cstr =
     | Evar ev ->
 	let ty = Evd.existential_type !evdref ev in
 	let jty = execute env evdref (whd_evar !evdref ty) in
-	let jty = assumption_of_judgment env jty in
+	let jty, rel = assumption_of_judgment env jty in
 	{ uj_val = cstr; uj_type = jty }
 
     | Rel n ->
@@ -192,7 +194,7 @@ let rec execute env evdref cstr =
     | Sort (Type u) ->
 	judge_of_type u
 
-    | App (f,args) ->
+    | App (f,ann,args) ->
         let jl = execute_array env evdref args in
 	let j =
 	  match kind_of_term f with
@@ -209,19 +211,19 @@ let rec execute env evdref cstr =
 	    | _ ->
 		execute env evdref f
 	in
-	e_judge_of_apply env evdref j jl
+	e_judge_of_apply env evdref j ann jl
 
     | Lambda (name,c1,c2) ->
         let j = execute env evdref c1 in
 	let var = e_type_judgment env evdref j in
-	let env1 = push_rel (name,None,var.utj_val) env in
+	let env1 = push_rel (var_decl_of name var.utj_val) env in
         let j' = execute env1 evdref c2 in
         judge_of_abstraction env1 name var j'
 
     | Prod (name,c1,c2) ->
         let j = execute env evdref c1 in
         let varj = e_type_judgment env evdref j in
-	let env1 = push_rel (name,None,varj.utj_val) env in
+	let env1 = push_rel (var_decl_of name varj.utj_val) env in
         let j' = execute env1 evdref c2 in
         let varj' = e_type_judgment env1 evdref j' in
 	judge_of_product env name varj varj'
@@ -231,7 +233,7 @@ let rec execute env evdref cstr =
         let j2 = execute env evdref c2 in
         let j2 = e_type_judgment env evdref j2 in
         let _ =  judge_of_cast env j1 DEFAULTcast j2 in
-        let env1 = push_rel (name,Some j1.uj_val,j2.utj_val) env in
+        let env1 = push_rel (def_decl_of name j1.uj_val j2.utj_val) env in
         let j3 = execute env1 evdref c3 in
         judge_of_letin env name j1 j2 j3
 
@@ -243,7 +245,11 @@ let rec execute env evdref cstr =
 
 and execute_recdef env evdref (names,lar,vdef) =
   let larj = execute_array env evdref lar in
-  let lara = Array.map (assumption_of_judgment env) larj in
+  let lara = Array.map 
+    (fun t -> 
+       let ty, rel = assumption_of_judgment env t in
+	 (* TODO check relevance *)
+	 ty) larj in
   let env1 = push_rec_types (names,lara,vdef) env in
   let vdefj = execute_array env1 evdref vdef in
   let vdefv = Array.map j_val vdefj in

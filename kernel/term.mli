@@ -69,6 +69,7 @@ type relevance = Expl | Irr
 type implicit = bool
 type 'a binder_annot = 'a * (relevance * implicit)
 type 'a letbinder_annot = 'a * relevance
+type app_annot = relevance * relevance array
 
 (** {5 Functions for dealing with constr terms. }
   The following functions are intended to simplify and to uniform the
@@ -199,7 +200,7 @@ type ('constr, 'types) pcofixpoint =
 
 
 module Constr : sig
-
+  
   (* [Var] is used for named variables and [Rel] for variables as
      de Bruijn indices. *)
   type ('constr, 'types) kind_of_term =
@@ -212,7 +213,7 @@ module Constr : sig
     | Prod      of name binder_annot * 'types * 'types
     | Lambda    of name binder_annot * 'types * 'constr
     | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
-    | App       of 'constr * (relevance * relevance array) * 'constr array
+    | App       of 'constr * app_annot * 'constr array
     | Const     of constant
     | Ind       of inductive
     | Construct of constructor
@@ -226,6 +227,11 @@ module Constr : sig
   val mkLetIn : name letbinder_annot * constr * types * constr -> constr
   val mkLambda : name binder_annot * types * constr -> constr
   val mkApp : constr * (relevance * relevance array) * constr array -> constr
+
+  val destProd : types -> name binder_annot * types * types
+  val destLambda : constr -> name binder_annot * types * constr
+  val destLetIn : constr -> name letbinder_annot * types * constr * constr
+  val destApp : constr -> constr * app_annot * constr array
 
 end
 
@@ -378,11 +384,14 @@ type body =
 val variable_body : body
 val definition_body : constr -> body
 val constr_of_body : body -> constr option
+val is_variable_body : body -> bool
 
 val map_body : (constr -> constr) -> body -> body
 val smartmap_body : (constr -> constr) -> body -> body
 val iter_body : (constr -> unit) -> body -> unit
 val cata_body : (constr -> 'a) -> 'a -> body -> 'a
+val fold_body : ('a -> constr -> 'a) -> 'a -> body -> 'a
+val compare_body : (constr -> constr -> bool) -> body -> body -> bool
 
 val anonymous : name binder_annot
 
@@ -390,18 +399,31 @@ type 'a declaration = 'a * body * types
 type named_declaration = identifier declaration
 type rel_declaration = name declaration
 
+val name_of : 'a binder_annot -> 'a
+val letname_of : 'a letbinder_annot -> 'a
+
+val relevance_of : 'a binder_annot -> relevance
+val letrelevance_of : 'a letbinder_annot -> relevance
+
+val binder_annot_of : 'a -> 'a binder_annot
+val letbinder_annot_of : 'a -> 'a letbinder_annot
+
+val map_binder : ('a -> 'b) -> 'a binder_annot -> 'b binder_annot
+val map_letbinder : ('a -> 'b) -> 'a letbinder_annot -> 'b letbinder_annot
+
 val var_decl_of : 'a binder_annot -> types -> 'a declaration
 val def_decl_of : 'a letbinder_annot -> constr -> types -> 'a declaration
 val fix_decl_of : 'a letbinder_annot -> types -> 'a declaration
 
-val name_of : 'a binder_annot -> 'a
-val letname_of : 'a letbinder_annot -> 'a
+val var_decl_of_name : 'a -> types -> 'a declaration
+val def_decl_of_name : 'a -> constr -> types -> 'a declaration
 
 val map_named_declaration :
   (constr -> constr) -> named_declaration -> named_declaration
 val map_rel_declaration :
   (constr -> constr) -> rel_declaration -> rel_declaration
 
+val fold_declaration : (constr -> 'a -> 'a) -> 'b declaration -> 'a -> 'a  
 val fold_named_declaration :
   (constr -> 'a -> 'a) -> named_declaration -> 'a -> 'a
 val fold_rel_declaration :

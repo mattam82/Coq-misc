@@ -94,6 +94,8 @@ val iter_constr_with_full_binders :
 val strip_head_cast : constr -> constr
 val drop_extra_implicit_args : constr -> constr
 
+val destBinApp : constr -> constr * (relevance * constr)
+
 (** occur checks *)
 exception Occur
 val occur_meta : types -> bool
@@ -103,11 +105,11 @@ val occur_const : constant -> types -> bool
 val occur_evar : existential_key -> types -> bool
 val occur_var : env -> identifier -> types -> bool
 val occur_var_in_decl :
-  env ->
-  identifier -> 'a * types option * types -> bool
+  env -> identifier -> 'a declaration -> bool
 val free_rels : constr -> Intset.t
 val dependent : constr -> constr -> bool
 val dependent_no_evar : constr -> constr -> bool
+val dependent_in_decl : constr -> 'a declaration -> bool
 val count_occurrences : constr -> constr -> int
 val collect_metas : constr -> int list
 val collect_vars : constr -> Idset.t (** for visible vars only *)

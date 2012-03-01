@@ -771,7 +771,7 @@ let apply_on_clause (f,t) clause =
 
 let discr_positions env sigma (lbeq,eqn,(t,t1,t2)) eq_clause cpath dirn sort =
   let e = next_ident_away eq_baseid (ids_of_context env) in
-  let e_env = push_named (e,None,t) env in
+  let e_env = push_named (var_decl_of_name e t) env in
   let discriminator =
     build_discriminator sigma e_env dirn (mkVar e) sort cpath in
   let (pf, absurd_term) = discrimination_pf e (t,t1,t2) discriminator lbeq in
@@ -1078,7 +1078,7 @@ let simplify_args env sigma t =
 
 let inject_at_positions env sigma (eq,_,(t,t1,t2)) eq_clause posns tac =
   let e = next_ident_away eq_baseid (ids_of_context env) in
-  let e_env = push_named (e,None,t) env in
+  let e_env = push_named (var_decl_of_name e t) env in
   let injectors =
     map_succeed
       (fun (cpath,t1',t2') ->
@@ -1377,10 +1377,10 @@ user = raise user error specific to rewrite
 let unfold_body x gl =
   let hyps = pf_hyps gl in
   let xval =
-    match Sign.lookup_named x hyps with
-        (_,Some xval,_) -> xval
-      | _ -> errorlabstrm "unfold_body"
-          (pr_id x ++ str" is not a defined hypothesis.") in
+    match Sign.named_value x hyps with
+    | Some xval -> xval
+    | _ -> errorlabstrm "unfold_body"
+        (pr_id x ++ str" is not a defined hypothesis.") in
   let aft = afterHyp x gl in
   let hl = List.fold_right (fun (y,yval,_) cl -> (y,InHyp) :: cl) aft [] in
   let xvar = mkVar x in
@@ -1423,13 +1423,13 @@ let subst_one dep_proof_ok x (hyp,rhs,dir) gl =
      rewritten and reintroduced *)
   let abshyps =
     map_succeed
-      (fun (id,v,_) -> if v=None then mkVar id else failwith "caught")
+      (fun (id,v,_) -> if is_variable_body v then mkVar id else failwith "caught")
       depdecls in
   (* a tactic that either introduce an abstracted and rewritten hyp,
      or introduce a definition where x was replaced *)
   let introtac = function
-      (id,None,_) -> intro_using id
-    | (id,Some hval,htyp) ->
+      (id,Variable _,_) -> intro_using id
+    | (id,Definition (_, hval),htyp) ->
         letin_tac None (Name id)
 	  (replace_term (mkVar x) rhs hval)
 	  (Some (replace_term (mkVar x) rhs htyp)) nowhere
@@ -1452,7 +1452,7 @@ let subst_one_var dep_proof_ok x gl =
   let hyps = pf_hyps gl in
   let (_,xval,_) = pf_get_hyp gl x in
   (* If x has a body, simply replace x with body and clear x *)
-  if xval <> None then tclTHEN (unfold_body x) (clear [x]) gl else
+  if not (is_variable_body xval) then tclTHEN (unfold_body x) (clear [x]) gl else
   (* x is a variable: *)
   let varx = mkVar x in
   (* Find a non-recursive definition for x *)

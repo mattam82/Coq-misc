@@ -172,7 +172,7 @@ let new_evar_instance sign evd typ ?(src=(dummy_loc,InternalHole)) ?filter ?cand
 
 let compute_var_aliases sign =
   List.fold_right (fun (id,b,c) aliases ->
-    match b with
+    match constr_of_body b with
     | Some t ->
         (match kind_of_term t with
         | Var id' ->
@@ -187,7 +187,7 @@ let compute_var_aliases sign =
 let compute_rel_aliases var_aliases rels =
   snd (List.fold_right (fun (_,b,t) (n,aliases) ->
     (n-1,
-     match b with
+     match constr_of_body b with
      | Some t ->
          (match kind_of_term t with
          | Var id' ->
@@ -234,7 +234,7 @@ let extend_alias (_,b,_) (var_aliases,rel_aliases) =
     Intmap.fold (fun n l -> Intmap.add (n+1) (List.map (lift 1) l))
       rel_aliases Intmap.empty in
   let rel_aliases =
-    match b with
+    match constr_of_body b with
     | Some t ->
         (match kind_of_term t with
         | Var id' ->
@@ -307,7 +307,7 @@ let make_projectable_subst aliases sigma evi args =
   let (_,full_subst,cstr_subst) =
     List.fold_right
       (fun (id,b,c) (args,all,cstrs) ->
-        match b,args with
+        match constr_of_body b,args with
 	| None, a::rest ->
 	    let a = whd_evar sigma a in
 	    let cstrs =
@@ -385,7 +385,7 @@ let push_rel_context_to_named_context env typ =
     Sign.fold_rel_context
       (fun (na,c,t) (subst, avoid, env) ->
 	let id = next_name_away na avoid in
-	let d = (id,Option.map (substl subst) c,substl subst t) in
+	let d = (id,map_body (substl subst) c,substl subst t) in
 	(mkVar id :: subst, id::avoid, push_named d env))
       (rel_context env) ~init:([], ids, env) in
   (named_context_val env, substl subst typ, inst_rels@inst_vars, subst)
@@ -484,16 +484,16 @@ let materialize_evar define_fun env evd k (evk1,args1) ty_in_env =
   let (sign2,filter2,inst2_in_env,inst2_in_sign,_,evd,_) =
     List.fold_right (fun (na,b,t_in_env as d) (sign,filter,inst_in_env,inst_in_sign,env,evd,avoid) ->
       match b with
-      | None ->
+      | Variable _ as b ->
           let id = next_name_away na avoid in
           let evd,t_in_sign =
             define_evar_from_virtual_equation define_fun env evd t_in_env
               sign filter inst_in_env inst_in_sign in
-          (push_named_context_val (id,None,t_in_sign) sign,true::filter,
+          (push_named_context_val (id,b,t_in_sign) sign,true::filter,
            (mkRel 1)::(List.map (lift 1) inst_in_env),
            (mkRel 1)::(List.map (lift 1) inst_in_sign),
            push_rel d env,evd,id::avoid)
-      | Some b ->
+      | Definition _ ->
           (sign,filter,
            List.map (lift 1) inst_in_env,
            List.map (lift 1) inst_in_sign,
@@ -640,7 +640,7 @@ let clear_hyps_in_evi evdref hyps concl ids =
   let nhyps =
     let check_context (id,ob,c) =
       let err = OccurHypInSimpleClause (Some id) in
-      (id, Option.map (check_and_clear_in_constr evdref err ids) ob,
+      (id, map_body (check_and_clear_in_constr evdref err ids) ob,
 	check_and_clear_in_constr evdref err ids c)
     in
     let check_value vk =
@@ -1305,7 +1305,7 @@ let is_ground_term evd t =
 
 let is_ground_env evd env =
   let is_ground_decl = function
-      (_,Some b,_) -> is_ground_term evd b
+      (_,Definition (_, b),_) -> is_ground_term evd b
     | _ -> true in
   List.for_all is_ground_decl (rel_context env) &&
   List.for_all is_ground_decl (named_context env)
@@ -1383,8 +1383,8 @@ let get_actual_deps aliases l t =
 let remove_instance_local_defs evd evk args =
   let evi = Evd.find evd evk in
   let rec aux = function
-  | (_,Some _,_)::sign, a::args -> aux (sign,args)
-  | (_,None,_)::sign, a::args -> a::aux (sign,args)
+  | (_,b,_)::sign, a::args when is_variable_body b -> a::aux (sign,args)
+  | (_,_,_)::sign, a::args -> aux (sign,args)
   | [], [] -> []
   | _ -> assert false in
   aux (evar_filtered_context evi, args)
@@ -1540,9 +1540,7 @@ let add_evars_of_evars_in_type acc evm e =
   let hyps = Environ.named_context_of_val evi.evar_hyps in
   List.fold_left begin fun r (_,b,t) ->
     let r = add_evars_of_evars_of_term r evm t in
-    match b with
-    | None -> r
-    | Some b -> add_evars_of_evars_of_term r evm b
+      cata_body (add_evars_of_evars_of_term r evm) r b
   end acc_with_concl hyps
 
 let rec add_evars_of_evars_in_types_of_set acc evm s =
@@ -1561,7 +1559,7 @@ let evars_of_evars_in_types_of_list evm l =
 
 let evars_of_named_context nc =
   List.fold_right (fun (_, b, t) s ->
-    Option.fold_left (fun s t ->
+    fold_body (fun s t ->
       Intset.union s (evars_of_term t))
       (Intset.union s (evars_of_term t)) b)
     nc Intset.empty
@@ -1594,7 +1592,7 @@ let undefined_evars_of_term evd t =
 
 let undefined_evars_of_named_context evd nc =
   List.fold_right (fun (_, b, t) s ->
-    Option.fold_left (fun s t ->
+    fold_body (fun s t ->
       Intset.union s (undefined_evars_of_term evd t))
       (Intset.union s (undefined_evars_of_term evd t)) b)
     nc Intset.empty
@@ -1683,7 +1681,7 @@ let define_pure_evar_as_product evd evk =
   let id = next_ident_away idx (ids_of_named_context (evar_context evi)) in
   let evd1,dom = new_type_evar evd evenv ~filter:(evar_filter evi) in
   let evd2,rng =
-    let newenv = push_named (id, None, dom) evenv in
+    let newenv = push_named (var_decl_of_name id dom) evenv in
     let src = evar_source evk evd1 in
     let filter = true::evar_filter evi in
     new_type_evar evd1 newenv ~src ~filter in
@@ -1715,18 +1713,23 @@ let define_pure_evar_as_lambda env evd evk =
   let evi = Evd.find_undefined evd evk in
   let evenv = evar_unfiltered_env evi in
   let typ = whd_betadeltaiota env evd (evar_concl evi) in
-  let evd1,(na,dom,rng) = match kind_of_term typ with
-  | Prod (na,dom,rng) -> (evd,(na,dom,rng))
-  | Evar ev' -> let evd,typ = define_evar_as_product evd ev' in evd,destProd typ
+  let evd1,(na,dom,rng) = match Constr.kind_of_term typ with
+  | Constr.Prod (na,dom,rng) -> (evd,(na,dom,rng))
+  | Constr.Evar ev' -> let evd,typ = define_evar_as_product evd ev' in
+      evd,Constr.destProd typ
   | _ -> error_not_product_loc dummy_loc env evd typ in
   let avoid = ids_of_named_context (evar_context evi) in
   let id =
-    next_name_away_with_default_using_types "x" na avoid (whd_evar evd dom) in
-  let newenv = push_named (id, None, dom) evenv in
+    map_binder (fun na ->
+		  next_name_away_with_default_using_types "x" na avoid (whd_evar evd dom))
+      na
+  in
+  let decl = var_decl_of id dom in
+  let newenv = push_named decl evenv in
   let filter = true::evar_filter evi in
   let src = evar_source evk evd1 in
-  let evd2,body = new_evar evd1 newenv ~src (subst1 (mkVar id) rng) ~filter in
-  let lam = mkLambda (Name id, dom, subst_var id body) in
+  let evd2,body = new_evar evd1 newenv ~src (subst1 (mkVar (name_of id)) rng) ~filter in
+  let lam = mkNamedLambda_or_LetIn decl body in
   Evd.define evk lam evd2, lam
 
 let define_evar_as_lambda env evd (evk,args) =

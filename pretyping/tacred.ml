@@ -54,7 +54,7 @@ let is_evaluable env = function
 
 let value_of_evaluable_ref env = function
   | EvalConstRef con -> constant_value env con
-  | EvalVarRef id -> Option.get (pi2 (lookup_named id env))
+  | EvalVarRef id -> Option.get (named_value id env)
 
 let constr_of_evaluable_ref = function
   | EvalConstRef con -> mkConst con
@@ -96,12 +96,8 @@ let destEvalRef c = match kind_of_term c with
 
 let reference_opt_value sigma env = function
   | EvalConst cst -> constant_opt_value env cst
-  | EvalVar id ->
-      let (_,v,_) = lookup_named id env in
-      v
-  | EvalRel n ->
-      let (_,v,_) = lookup_rel n env in
-      Option.map (lift n) v
+  | EvalVar id -> named_value id env
+  | EvalRel n -> Option.map (lift n) (rel_value n env)
   | EvalEvar ev -> Evd.existential_opt_value sigma ev
 
 exception NotEvaluable
@@ -240,7 +236,7 @@ let compute_consteval_direct sigma env ref =
     let c',l = whd_betadelta_stack env sigma c in
     match kind_of_term c' with
       | Lambda (id,t,g) when l=[] ->
-	  srec (push_rel (id,None,t) env) (n+1) (t::labs) g
+	  srec (push_rel (var_decl_of_name id t) env) (n+1) (t::labs) g
       | Fix fix ->
 	  (try check_fix_reversibility labs l fix
 	  with Elimconst -> NotAnElimination)
@@ -257,7 +253,7 @@ let compute_consteval_mutual_fix sigma env ref =
     let nargs = List.length l in
     match kind_of_term c' with
       | Lambda (na,t,g) when l=[] ->
-	  srec (push_rel (na,None,t) env) (minarg+1) (t::labs) ref g
+	  srec (push_rel (var_decl_of_name na t) env) (minarg+1) (t::labs) ref g
       | Fix ((lv,i),(names,_,_)) ->
 	  (* Last known constant wrapping Fix is ref = [labs](Fix l) *)
 	  (match compute_consteval_direct sigma env ref with
@@ -266,7 +262,10 @@ let compute_consteval_mutual_fix sigma env ref =
 	     | EliminationFix (minarg',minfxargs,infos) ->
 		 let refs =
 		   Array.map
-		     (invert_name labs l names.(i) env sigma ref) names in
+		     (fun n -> 
+			invert_name labs l (letname_of names.(i)) env sigma ref
+			  (letname_of n)) names 
+		 in
 		 let new_minarg = max (minarg'+minarg-nargs) minarg' in
 		 EliminationMutualFix (new_minarg,ref,(refs,infos))
 	     | _ -> assert false)
@@ -370,7 +369,8 @@ let substl_with_function subst constr =
                   evd := Evd.add !evd !cnt
                     (Evd.make_evar
                       (val_of_named_context
-                        [(vfx,None,dummy);(vfun,None,dummy)])
+                        [(var_decl_of_name vfx dummy);
+			 (var_decl_of_name vfun dummy)])
                       dummy);
                   minargs := Intmap.add !cnt min !minargs;
                   lift k (mkEvar(!cnt,[|fx;ref|]))
@@ -471,7 +471,7 @@ let reduce_mind_case_use_function func env sigma mia =
             let minargs = List.length mia.mcargs in
 	    fun i ->
 	      if i = bodynum then Some (minargs,func)
-	      else match names.(i) with
+	      else match letname_of names.(i) with
 		| Anonymous -> None
 		| Name id ->
 		    (* In case of a call to another component of a block of
@@ -733,7 +733,7 @@ let try_red_product env sigma c =
                         simpfun (app_stack (f,stack')))
              | _ -> simpfun (appvect (redrec env f, l)))
       | Cast (c,_,_) -> redrec env c
-      | Prod (x,a,b) -> mkProd (x, a, redrec (push_rel (x,None,a) env) b)
+      | Prod (x,a,b) -> mkProd (x, a, redrec (push_rel (var_decl_of_name x a) env) b)
       | LetIn (x,a,b,t) -> redrec env (subst1 a t)
       | Case (ci,p,d,lf) -> simpfun (mkCase (ci,p,redrec env d,lf))
       | _ when isEvalRef env x ->
@@ -987,7 +987,8 @@ let reduce_to_ind_gen allow_product env sigma t =
       | Ind ind-> (ind, it_mkProd_or_LetIn t l)
       | Prod (n,ty,t') ->
 	  if allow_product then
-	    elimrec (push_rel (n,None,ty) env) t' ((n,None,ty)::l)
+	    let decl = var_decl_of_name n ty in
+	    elimrec (push_rel decl env) t' (decl::l)
 	  else
 	    errorlabstrm "" (str"Not an inductive definition.")
       | _ ->
@@ -1061,7 +1062,8 @@ let reduce_to_ref_gen allow_product env sigma ref t =
     match kind_of_term c with
       | Prod (n,ty,t') ->
 	  if allow_product then
-	    elimrec (push_rel (n,None,t) env) t' ((n,None,ty)::l)
+	    let decl = var_decl_of_name n ty in
+	    elimrec (push_rel decl env) t' (decl::l)
 	  else
 	     errorlabstrm ""
 	       (str "Cannot recognize an atomic statement based on " ++

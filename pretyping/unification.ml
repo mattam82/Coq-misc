@@ -25,6 +25,8 @@ open Retyping
 open Coercion.Default
 open Recordops
 
+open Constr
+
 let occur_meta_or_undefined_evar evd c =
   let rec occrec c = match kind_of_term c with
     | Meta _ -> raise Occur
@@ -321,7 +323,7 @@ let use_metas_pattern_unification flags nb l =
 
 let expand_key env = function
   | Some (ConstKey cst) -> constant_opt_value env cst
-  | Some (VarKey id) -> (try named_body id env with Not_found -> None)
+  | Some (VarKey id) -> named_value id env
   | Some (RelKey _) -> None
   | None -> None
 
@@ -447,10 +449,10 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
         (* eta-expansion *)
 	| Lambda (na,t1,c1), _ when flags.modulo_eta ->
 	    unirec_rec (push (na,t1) curenvnb) CONV true wt substn
-	      c1 (mkApp (lift 1 cN,[|mkRel 1|]))
+	      c1 (mkApp (lift 1 cN,(Expl,[|Expl|]),[|mkRel 1|]))
 	| _, Lambda (na,t2,c2) when flags.modulo_eta ->
 	    unirec_rec (push (na,t2) curenvnb) CONV true wt substn
-	      (mkApp (lift 1 cM,[|mkRel 1|])) c2
+	      (mkApp (lift 1 cM,(Expl,[|Expl|]),[|mkRel 1|])) c2
 
 	| Case (_,p1,c1,cl1), Case (_,p2,c2,cl2) ->
             (try 
@@ -461,7 +463,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	     with ex when precatchable_exception ex ->
 	       reduce curenvnb pb b wt substn cM cN)
 
-	| App (f1,l1), _ when 
+	| App (f1,ann1,l1), _ when 
 	    (isMeta f1 && use_metas_pattern_unification flags nb l1
             || use_evars_pattern_unification flags && isAllowedEvar flags f1) ->
             (match
@@ -469,12 +471,13 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
              with
              | None ->
                  (match kind_of_term cN with
-                 | App (f2,l2) -> unify_app curenvnb pb b substn cM f1 l1 cN f2 l2
+                 | App (f2,ann2,l2) -> 
+		     unify_app curenvnb pb b substn cM f1 ann1 l1 cN f2 ann2 l2
                  | _ -> unify_not_same_head curenvnb pb b wt substn cM cN)
              | Some l ->
                  solve_pattern_eqn_array curenvnb f1 l cN substn)
 
-	| _, App (f2,l2) when
+	| _, App (f2,ann2,l2) when
 	    (isMeta f2 && use_metas_pattern_unification flags nb l2
             || use_evars_pattern_unification flags && isAllowedEvar flags f2) ->
             (match
@@ -482,18 +485,19 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
              with
              | None ->
                  (match kind_of_term cM with
-                 | App (f1,l1) -> unify_app curenvnb pb b substn cM f1 l1 cN f2 l2
+                 | App (f1,ann1,l1) -> 
+		     unify_app curenvnb pb b substn cM f1 ann1 l1 cN f2 ann2 l2
                  | _ -> unify_not_same_head curenvnb pb b wt substn cM cN)
              | Some l ->
 	         solve_pattern_eqn_array curenvnb f2 l cM substn)
 
-	| App (f1,l1), App (f2,l2) ->
-            unify_app curenvnb pb b substn cM f1 l1 cN f2 l2
+	| App (f1,ann1,l1), App (f2,ann2,l2) ->
+            unify_app curenvnb pb b substn cM f1 ann1 l1 cN f2 ann2 l2
 
 	| _ ->
             unify_not_same_head curenvnb pb b wt substn cM cN
 
-  and unify_app curenvnb pb b substn cM f1 l1 cN f2 l2 =
+  and unify_app curenvnb pb b substn cM f1 ann1 l1 cN f2 ann2 l2 =
     try
       let (f1,l1,f2,l2) = adjust_app_array_size f1 l1 f2 l2 in
       array_fold_left2 (unirec_rec curenvnb CONV true false)
@@ -501,7 +505,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
     with ex when precatchable_exception ex ->
     try reduce curenvnb pb b false substn cM cN
     with ex when precatchable_exception ex ->
-    try expand curenvnb pb b false substn cM f1 l1 cN f2 l2
+    try expand curenvnb pb b false substn cM f1 ann1 l1 cN f2 ann2 l2
     with ex when precatchable_exception ex ->
     canonical_projections curenvnb pb b cM cN substn
 
@@ -511,11 +515,11 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
     if constr_cmp cv_pb cM cN then substn else
     try reduce curenvnb pb b wt substn cM cN
     with ex when precatchable_exception ex ->
-    let (f1,l1) =
-      match kind_of_term cM with App (f,l) -> (f,l) | _ -> (cM,[||]) in
-    let (f2,l2) =
-      match kind_of_term cN with App (f,l) -> (f,l) | _ -> (cN,[||]) in
-    expand curenvnb pb b wt substn cM f1 l1 cN f2 l2
+    let (f1,ann1,l1) =
+      match kind_of_term cM with App (f,ann,l) -> (f,ann,l) | _ -> (cM,(Expl,[||]),[||]) in
+    let (f2,ann2,l2) =
+      match kind_of_term cN with App (f,ann,l) -> (f,ann,l) | _ -> (cN,(Expl,[||]),[||]) in
+    expand curenvnb pb b wt substn cM f1 ann1 l1 cN f2 ann2 l2
 
   and reduce curenvnb pb b wt (sigma, metas, evars as substn) cM cN =
     if use_full_betaiota flags && not (subterm_restriction b flags) then
@@ -530,7 +534,8 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
     else
       error_cannot_unify (fst curenvnb) sigma (cM,cN)
 	    
-  and expand (curenv,_ as curenvnb) pb b wt (sigma,metasubst,_ as substn) cM f1 l1 cN f2 l2 =
+  and expand (curenv,_ as curenvnb) pb b wt (sigma,metasubst,_ as substn) 
+      cM f1 ann1 l1 cN f2 ann2 l2 =
 
     if
       (* Try full conversion on meta-free terms. *)
@@ -572,24 +577,24 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	    (match expand_key curenv cf1 with
 	    | Some c ->
 		unirec_rec curenvnb pb b wt substn
-                  (whd_betaiotazeta sigma (mkApp(c,l1))) cN
+                  (whd_betaiotazeta sigma (mkApp(c,ann1,l1))) cN
 	    | None ->
 		(match expand_key curenv cf2 with
 		| Some c ->
 		    unirec_rec curenvnb pb b wt substn cM
-                      (whd_betaiotazeta sigma (mkApp(c,l2)))
+                      (whd_betaiotazeta sigma (mkApp(c,ann2,l2)))
 		| None ->
 		    error_cannot_unify curenv sigma (cM,cN)))
 	| Some false ->
 	    (match expand_key curenv cf2 with
 	    | Some c ->
 		unirec_rec curenvnb pb b wt substn cM
-                  (whd_betaiotazeta sigma (mkApp(c,l2)))
+                  (whd_betaiotazeta sigma (mkApp(c,ann2,l2)))
 	    | None ->
 		(match expand_key curenv cf1 with
 		| Some c ->
 		    unirec_rec curenvnb pb b wt substn
-                      (whd_betaiotazeta sigma (mkApp(c,l1))) cN
+                      (whd_betaiotazeta sigma (mkApp(c,ann1,l1))) cN
 		| None ->
 		    error_cannot_unify curenv sigma (cM,cN)))
 
@@ -671,16 +676,16 @@ let rec unify_with_eta keptside flags env sigma c1 c2 =
     let side,(sigma,metas',evars') =
       unify_with_eta keptside flags env' sigma c1' c2'
     in (side,(sigma,metas@metas',evars@evars'))
-  | (Lambda (na,t,c1'),_)->
+  | (Lambda ((_, (rel,_)) as na,t,c1'),_)->
     let env' = push_rel_assum (na,t) env in
     let side = left in (* expansion on the right: we keep the left side *)
       unify_with_eta side flags env' sigma
-      c1' (mkApp (lift 1 c2,[|mkRel 1|]))
-  | (_,Lambda (na,t,c2')) ->
+      c1' (mkApp (lift 1 c2,(Expl,[|rel|]),[|mkRel 1|]))
+  | (_,Lambda ((_, (rel,_)) as na,t,c2')) ->
     let env' = push_rel_assum (na,t) env in
     let side = right in (* expansion on the left: we keep the right side *)
       unify_with_eta side flags env' sigma
-      (mkApp (lift 1 c1,[|mkRel 1|])) c2'
+      (mkApp (lift 1 c1,(Expl,[|rel|]),[|mkRel 1|])) c2'
   | _ ->
     (keptside,unify_0 env sigma CONV flags c1 c2)
     
@@ -771,10 +776,10 @@ let applyHead env evd n c  =
       (evd, c)
     else
       match kind_of_term (whd_betadeltaiota env evd cty) with
-      | Prod (_,c1,c2) ->
+      | Prod (na,c1,c2) ->
         let (evd',evar) =
 	  Evarutil.new_evar evd env ~src:(dummy_loc,GoalEvar) c1 in
-	  apprec (n-1) (mkApp(c,[|evar|])) (subst1 evar c2) evd'
+	  apprec (n-1) (mkApp(c,(Expl,[|relevance_of na|]),[|evar|])) (subst1 evar c2) evd'
       | _ -> error "Apply_Head_Then"
   in
     apprec n c (Typing.type_of env evd c) evd
@@ -860,7 +865,7 @@ let w_merge env with_types flags (evd,metas,evars) =
 	  (* This can make rhs' ill-typed if metas are *)
           let rhs' = subst_meta_instances metas rhs in
           match kind_of_term rhs with
-	  | App (f,cl) when occur_meta rhs' ->
+	  | App (f,ann,cl) when occur_meta rhs' ->
 	      if occur_evar evk rhs' then
                 error_occur_check curenv evd evk rhs';
 	      if is_mimick_head flags.modulo_delta f then
@@ -1008,6 +1013,8 @@ let iter_fail f a =
       with ex when precatchable_exception ex -> ffail (i+1)
   in ffail 0
 
+
+
 (* Tries to find an instance of term [cl] in term [op].
    Unifies [cl] to every subterm of [op] until it finds a match.
    Fails if no match is found *)
@@ -1020,11 +1027,10 @@ let w_unify_to_subterm env evd ?(flags=default_unify_flags) (op,cl) =
        else error "Bound 1"
      with ex when precatchable_exception ex ->
        (match kind_of_term cl with
-	  | App (f,args) ->
+	  | App (f,ann,args) ->
 	      let n = Array.length args in
 	      assert (n>0);
-	      let c1 = mkApp (f,Array.sub args 0 (n-1)) in
-	      let c2 = args.(n-1) in
+	      let c1, (_, c2) = destBinApp cl in
 	      (try
 		 matchrec c1
 	       with ex when precatchable_exception ex ->
@@ -1099,11 +1105,9 @@ let w_unify_to_subterm_all env evd ?(flags=default_unify_flags) (op,cl) =
 	  then return (fun () -> w_typed_unify env evd CONV flags op cl,cl)
             else fail "Bound 1")
           (match kind_of_term cl with
-	    | App (f,args) ->
-		let n = Array.length args in
-		assert (n>0);
-		let c1 = mkApp (f,Array.sub args 0 (n-1)) in
-		let c2 = args.(n-1) in
+	    | App (f,_,args) ->
+		assert (Array.length args>0);
+		let c1, (_, c2) = destBinApp cl in
 		bind (matchrec c1) (matchrec c2)
 
             | Case(_,_,c,lf) -> (* does not search in the predicate *)

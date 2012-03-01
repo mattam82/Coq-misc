@@ -151,7 +151,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
    *    où x est une variable FRAICHE *)
   | Lambda (name,c1,c2) ->
       let v = fresh env name in
-      let env' = push_named (v,None,c1) env in
+      let env' = push_named (var_decl_of_name v c1) env in
       begin match compute_metamap env' sigma (subst1 (mkVar v) c2) with
 	(* terme de preuve complet *)
 	| TH (_,_,[]) -> TH (c,[],[])
@@ -164,7 +164,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
   | LetIn (name, c1, t1, c2) ->
       let v = fresh env name in
       let th1 = compute_metamap env sigma c1 in
-      let env' = push_named (v,Some c1,t1) env in
+      let env' = push_named (def_decl_of_name v c1 t1) env in
       let th2 = compute_metamap env' sigma (subst1 (mkVar v) c2) in
       begin match th1,th2 with
 	(* terme de preuve complet *)
@@ -209,7 +209,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
   (* 5. Fix. *)
   | Fix ((ni,i),(fi,ai,v)) ->
       (* TODO: use a fold *)
-      let vi = Array.map (fresh env) fi in
+      let vi = Array.map (fun x -> fst (map_letbinder (fresh env) x)) fi in
       let fi' = Array.map (fun id -> Name id) vi in
       let env' = push_named_rec_types (fi',ai,v) env in
       let a = Array.map
@@ -219,6 +219,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
       begin
 	try
 	  let v',mm,sgp = replace_in_array true env' sigma a in
+	  let fi' = Array.map letbinder_annot_of fi' in
 	  let fix = mkFix ((ni,i),(fi',ai,v')) in
 	  TH (fix,mm,sgp)
 	with NoMeta ->
@@ -239,7 +240,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
 
   (* Cofix. *)
   | CoFix (i,(fi,ai,v)) ->
-      let vi = Array.map (fresh env) fi in
+      let vi = Array.map (fun (id, _) -> fresh env id) fi in
       let fi' = Array.map (fun id -> Name id) vi in
       let env' = push_named_rec_types (fi',ai,v) env in
       let a = Array.map
@@ -249,6 +250,7 @@ let rec compute_metamap env sigma c = match kind_of_term c with
       begin
 	try
 	  let v',mm,sgp = replace_in_array true env' sigma a in
+	  let fi' = Array.map letbinder_annot_of fi' in
 	  let cofix = mkCoFix (i,(fi',ai,v')) in
 	  TH (cofix,mm,sgp)
 	with NoMeta ->
@@ -349,12 +351,13 @@ let rec tcc_aux subst (TH (c,mm,sgp) as _th) gl =
 	  | Name id -> id
           | _ -> error "Recursive functions must have names."
 	in
-	let fixes = array_map3 (fun f n c -> (out_name f,succ n,c)) fi ni ai in
+	let fixes = array_map3 (fun f n c -> (out_name (letname_of f),succ n,c)) fi ni ai in
 	let firsts,lasts = list_chop j (Array.to_list fixes) in
 	tclTHENS
 	  (tclTHEN
             (ensure_products (succ ni.(j)))
-            (mutual_fix (out_name fi.(j)) (succ ni.(j)) (firsts@List.tl lasts) j))
+            (mutual_fix (out_name (letname_of fi.(j)))
+	       (succ ni.(j)) (firsts@List.tl lasts) j))
 	  (List.map (function
 		       | None -> tclIDTAC
 		       | Some th -> tcc_aux subst th) sgp)
@@ -366,10 +369,10 @@ let rec tcc_aux subst (TH (c,mm,sgp) as _th) gl =
 	  | Name id -> id
           | _ -> error "Recursive functions must have names."
 	in
-	let cofixes = array_map2 (fun f c -> (out_name f,c)) fi ai in
+	let cofixes = array_map2 (fun f c -> (out_name (letname_of f),c)) fi ai in
 	let firsts,lasts = list_chop j (Array.to_list cofixes) in
 	tclTHENS
-	  (mutual_cofix (out_name fi.(j)) (firsts@List.tl lasts) j)
+	  (mutual_cofix (out_name (letname_of fi.(j))) (firsts@List.tl lasts) j)
 	  (List.map (function
 		       | None -> tclIDTAC
 		       | Some th -> tcc_aux subst th) sgp)

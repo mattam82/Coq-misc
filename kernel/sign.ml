@@ -33,6 +33,22 @@ let rec lookup_named id = function
   | _ :: sign -> lookup_named id sign
   | [] -> raise Not_found
 
+let named_type id sign =
+  let (_,_,t) = lookup_named id sign in t
+
+let named_body id sign =
+  let (_,b,_) = lookup_named id sign in b
+
+let evaluable_named id sign =
+  match named_body id sign with
+  | Definition _      -> true
+  | _                 -> false
+
+let named_value id sign = 
+  match named_body id sign with
+  | Definition (_, c) -> Some c
+  | Variable _ -> None
+
 let named_context_length = List.length
 let named_context_equal = list_equal eq_named_declaration
 

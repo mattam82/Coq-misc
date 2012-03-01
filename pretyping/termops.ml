@@ -535,8 +535,8 @@ let occur_var env id c =
 
 let occur_var_in_decl env hyp (_,c,typ) =
   match c with
-    | None -> occur_var env hyp typ
-    | Some body ->
+    | Variable _ -> occur_var env hyp typ
+    | Definition (_, body) ->
         occur_var env hyp typ ||
         occur_var env hyp body
 
@@ -591,6 +591,9 @@ let dependent_main noevar m t =
 
 let dependent = dependent_main false
 let dependent_no_evar = dependent_main true
+
+let dependent_in_decl a d =
+  fold_declaration (fun t acc -> dependent a t || acc) d false
 
 let count_occurrences m t =
   let n = ref 0 in
@@ -915,6 +918,13 @@ let compare_constr_univ f cv_pb t1 t2 =
 let rec constr_cmp cv_pb t1 t2 = compare_constr_univ constr_cmp cv_pb t1 t2
 
 let eq_constr = constr_cmp Reduction.CONV
+
+let destBinApp c = match kind_of_term c with
+    App(c,(a,ans),l) ->
+      let prev, last = array_decompose_last l in
+      let preva, lasta = array_decompose_last ans in
+	mkApp(c,(a,preva),prev), (lasta, last)
+  | _ -> assert false
 
 (* App(c,[t1,...tn]) -> ([c,t1,...,tn-1],tn)
    App(c,[||]) -> ([],c) *)

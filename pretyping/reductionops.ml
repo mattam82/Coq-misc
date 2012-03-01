@@ -292,23 +292,17 @@ let reduce_fix whdfun sigma fix stack =
                               -------------------
    qui coute cher *)
 
-let lookup_rel_body n env =
-  constr_of_body (pi2 (lookup_rel n env))
-
-let lookup_named_body n env =
-  constr_of_body (pi2 (lookup_named n env))
-
 open Constr
 
 let rec whd_state_gen flags ts env sigma =
   let rec whrec (x, stack as s) =
     match kind_of_term x with
       | Rel n when red_delta flags ->
-	  (match lookup_rel_body n env with
+	  (match rel_value n env with
 	   | Some body -> whrec (lift n body, stack)
 	   | _ -> s)
       | Var id when red_delta flags ->
-	  (match lookup_named_body id env with
+	  (match named_value id env with
 	     | Some body -> whrec (body, stack)
 	     | _ -> s)
       | Evar ev ->

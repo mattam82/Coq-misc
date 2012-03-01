@@ -29,6 +29,8 @@ open Retyping
 open Evd
 open Termops
 
+open Constr
+
 module type S = sig
   (*s Coercions. *)
 
@@ -204,10 +206,13 @@ module Default = struct
 	(* has type forall (x:u1), u2 (with v' recursively obtained) *)
         (* Note: we retype the term because sort-polymorphism may have *)
         (* weaken its type *)
-	let name = match name with
-	  | Anonymous -> Name (id_of_string "x")
-	  | _ -> name in
-	let env1 = push_rel (name,None,u1) env in
+	let name = 
+	  map_binder (function
+			| Anonymous -> Name (id_of_string "x")
+			| n -> n)
+	    name 
+	in
+	let env1 = push_rel (var_decl_of name u1) env in
 	let (evd', v1) =
 	  inh_conv_coerce_to_fail loc env1 evd rigidonly
             (Some (mkRel 1)) (lift 1 u1) (lift 1 t1) in

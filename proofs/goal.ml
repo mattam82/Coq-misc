@@ -288,15 +288,15 @@ let remove_hyp_body env sigma id =
     wrap_apply_to_hyp_and_dependent_on (Environ.named_context_val env) id
       (fun (_,c,t) _ ->
 	match c with
-	| None -> Util.error ((Names.string_of_id id)^" is not a local definition")
-	| Some c ->(id,None,t))
+	| Variable _ -> Util.error ((Names.string_of_id id)^" is not a local definition")
+	| Definition (ann, c) ->(id,Variable (ann, false),t))
       (fun (id',c,t as d) sign ->
 	(
 	  begin 
 	    let env = Environ.reset_with_named_context sign env in
 	    match c with
-	    | None ->  recheck_typability (Some id',id) env sigma t
-	    | Some b ->
+	    | Variable _ ->  recheck_typability (Some id',id) env sigma t
+	    | Definition (ann, b) ->
 		let b' = mkCast (b,DEFAULTcast, t) in
 		recheck_typability (Some id',id) env sigma b'
 	  end;d))
@@ -385,7 +385,7 @@ let convert_hyp check (id,b,bt as d) env rdefs gl info =
     (fun _ (_,c,ct) _ ->
        if check && not (Reductionops.is_conv env sigma bt ct) then
 	 Util.error ("Incorrect change of the type of "^(Names.string_of_id id));
-       if check && not (Option.Misc.compare (Reductionops.is_conv env sigma) b c) then
+       if check && not (compare_body (Reductionops.is_conv env sigma) b c) then
 	 Util.error ("Incorrect change of the body of "^(Names.string_of_id id));
        d)
   in

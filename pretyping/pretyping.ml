@@ -374,12 +374,12 @@ module Pretyping_F (Coercion : Coercion.S) = struct
             [] -> ctxt
           | (na,bk,None,ty)::bl ->
               let ty' = pretype_type empty_valcon env evdref lvar ty in
-              let dcl = (na,None,ty'.utj_val) in
+              let dcl = var_decl_of_name na ty'.utj_val in (* FIXME *)
 		type_bl (push_rel dcl env) (add_rel_decl dcl ctxt) bl
           | (na,bk,Some bd,ty)::bl ->
               let ty' = pretype_type empty_valcon env evdref lvar ty in
               let bd' = pretype (mk_tycon ty'.utj_val) env evdref lvar ty in
-              let dcl = (na,Some bd'.uj_val,ty'.utj_val) in
+              let dcl = def_decl_of_name na bd'.uj_val ty'.utj_val in
 		type_bl (push_rel dcl env) (add_rel_decl dcl ctxt) bl in
 	let ctxtv = Array.map (type_bl env empty_rel_context) bl in
 	let larj =
@@ -390,7 +390,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	let lara = Array.map (fun a -> a.utj_val) larj in
 	let ftys = array_map2 (fun e a -> it_mkProd_or_LetIn a e) ctxtv lara in
 	let nbfix = Array.length lar in
-	let names = Array.map (fun id -> Name id) names in
+	let names = Array.map (fun id -> letbinder_annot_of (Name id)) names in
 	  (* Note: bodies are not used by push_rec_types, so [||] is safe *)
 	let newenv = push_rec_types (names,ftys,[||]) env in
 	let vdefj =
@@ -480,9 +480,9 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	let (name',dom,rng) = evd_comb1 (split_tycon loc env) evdref tycon in
 	let dom_valcon = valcon_of_tycon dom in
 	let j = pretype_type dom_valcon env evdref lvar c1 in
-	let var = (name,None,j.utj_val) in
+	let var = var_decl_of_name name j.utj_val in
 	let j' = pretype rng (push_rel var env) evdref lvar c2 in
-	  judge_of_abstraction env (orelse_name name name') j j'
+	  judge_of_abstraction env (binder_annot_of (orelse_name name name')) j j'
 
     | GProd(loc,name,bk,c1,c2)        ->
 	let j = pretype_type empty_valcon env evdref lvar c1 in
@@ -491,12 +491,12 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	    let j = pretype_type empty_valcon env evdref lvar c2 in
 	      { j with utj_val = lift 1 j.utj_val }
 	  else
-	    let var = (name,j.utj_val) in
+	    let var = (binder_annot_of name,j.utj_val) in
 	    let env' = push_rel_assum var env in
 	      pretype_type empty_valcon env' evdref lvar c2
 	in
 	let resj =
-	  try judge_of_product env name j j'
+	  try judge_of_product env (binder_annot_of name) j j'
 	  with TypeError _ as e -> Loc.raise loc e in
 	  inh_conv_coerce_to_tycon loc env evdref resj tycon
 
@@ -509,7 +509,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	  | _ -> pretype empty_tycon env evdref lvar c1
 	in
 	let t = refresh_universes j.uj_type in
-	let var = (name,Some j.uj_val,t) in
+	let var = def_decl_of_name name j.uj_val t in
         let tycon = lift_tycon 1 tycon in
 	let j' = pretype tycon (push_rel var env) evdref lvar c2 in
 	  { uj_val = mkLetIn (name, j.uj_val, t, j'.uj_val) ;
@@ -539,7 +539,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 		  List.map (fun (_,b,t) -> (Anonymous,b,t)) arsgn
 		else arsgn
 	    in
-	    let psign = (na,None,build_dependent_inductive env indf)::arsgn in
+	    let psign = (var_decl_of_name na (build_dependent_inductive env indf))::arsgn in
 	    let nar = List.length arsgn in
 	      (match po with
 		 | Some p ->
@@ -602,7 +602,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	      else arsgn
 	  in
 	  let nar = List.length arsgn in
-	  let psign = (na,None,build_dependent_inductive env indf)::arsgn in
+	  let psign = (var_decl_of_name na (build_dependent_inductive env indf))::arsgn in
 	  let pred,p = match po with
 	    | Some p ->
 		let env_p = push_rels psign env in

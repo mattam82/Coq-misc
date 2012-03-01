@@ -77,7 +77,7 @@ let type_ctx_instance evars env ctx inst subst =
     (na, b, t) :: ctx ->
       let t' = substl subst t in
       let c', l =
-	match b with
+	match constr_of_body b with
 	| None -> interp_casted_constr_evars evars env (List.hd l) t', List.tl l
 	| Some b -> substl subst b, l
       in
@@ -149,7 +149,7 @@ let new_instance ?(abstract=false) ?(global=false) ctx (instid, bk, cl) props
     let cl, args = Typeclasses.dest_class_app (push_rel_context ctx'' env) c in
     let _, args = 
       List.fold_right (fun (na, b, t) (args, args') ->
-	match b with
+	match constr_of_body b with
 	| None -> (List.tl args, List.hd args :: args')
 	| Some b -> (args, substl args' b :: args'))
 	(snd cl.cl_context) (args, [])
@@ -213,7 +213,7 @@ let new_instance ?(abstract=false) ?(global=false) ctx (instid, bk, cl) props
 	      let props, rest =
 		List.fold_left
 		  (fun (props, rest) (id,b,_) ->
-		    if b = None then
+		    if is_variable_body b then
 		      try
 			let (loc_mid, c) = List.find (fun (id', _) -> Name (snd (get_id id')) = id) rest in
 			let rest' = List.filter (fun (id', _) -> Name (snd (get_id id')) <> id) rest in
@@ -240,7 +240,7 @@ let new_instance ?(abstract=false) ?(global=false) ctx (instid, bk, cl) props
 	      None, termtype
 	  | Some (Inl subst) ->
 	      let subst = List.fold_left2
-		(fun subst' s (_, b, _) -> if b = None then s :: subst' else subst')
+		(fun subst' s (_, b, _) -> if is_variable_body b then s :: subst' else subst')
 		[] subst (k.cl_props @ snd k.cl_context)
 	      in
 	      let app, ty_constr = instance_constructor k subst in
@@ -278,7 +278,7 @@ let named_of_rel_context l =
     List.fold_right
       (fun (na, b, t) (subst, ctx) ->
 	let id = match na with Anonymous -> raise (Invalid_argument "named_of_rel_context") | Name id -> id in
-	let d = (id, Option.map (substl subst) b, substl subst t) in
+	let d = (id, map_body (substl subst) b, substl subst t) in
 	  (mkVar id :: subst, d :: ctx))
       l ([], [])
   in ctx
@@ -292,7 +292,7 @@ let context l =
   let _, ((env', fullctx), impls) = interp_context_evars evars env l in
   let fullctx = Evarutil.nf_rel_context_evar !evars fullctx in
   let ce t = Evarutil.check_evars env Evd.empty !evars t in
-  List.iter (fun (n, b, t) -> Option.iter ce b; ce t) fullctx;
+  List.iter (fun (n, b, t) -> iter_body ce b; ce t) fullctx;
   let ctx = try named_of_rel_context fullctx with _ ->
     error "Anonymous variables not allowed in contexts."
   in

@@ -222,7 +222,7 @@ let combine_params avoid fn applied needed =
     (fun x -> match x with (t, Some (loc, ExplByName id)) -> id, t | _ -> assert false)
     named
   in
-  let needed = List.filter (fun (_, (_, b, _)) -> b = None) needed in
+  let needed = List.filter (fun (_, (_, b, _)) -> is_variable_body b) needed in
   let rec aux ids avoid app need =
     match app, need with
 	[], [] -> List.rev ids, avoid
@@ -283,10 +283,14 @@ let implicit_application env ?(allow_partial=true) f ty =
 	  let (ci, rd) = c.cl_context in
 	  if not allow_partial then
 	    begin
-	      let applen = List.fold_left (fun acc (x, y) -> if y = None then succ acc else acc) 0 par in
-	      let needlen = List.fold_left (fun acc x -> if x = None then succ acc else acc) 0 ci in
+	      let applen = List.fold_left
+		(fun acc (x, y) -> if y = None then succ acc else acc) 0 par 
+	      in
+	      let needlen = List.fold_left
+		(fun acc x -> if x = None then succ acc else acc) 0 ci in
 		if needlen <> applen then
-		  Typeclasses_errors.mismatched_ctx_inst (Global.env ()) Parameters (List.map fst par) rd
+		  Typeclasses_errors.mismatched_ctx_inst
+		    (Global.env ()) Parameters (List.map fst par) rd
 	    end;
 	  let pars = List.rev (List.combine ci rd) in
 	  let args, avoid = combine_params avoid f par pars in

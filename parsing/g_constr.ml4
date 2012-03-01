@@ -117,10 +117,10 @@ let aliasvar = function CPatAlias (loc, _, id) -> Some (loc,Name id) | _ -> None
 
 GEXTEND Gram
   GLOBAL: binder_constr lconstr constr operconstr sort global
-  constr_pattern lconstr_pattern Constr.ident
+  constr_pattern lconstr_pattern Pcoq.Constr.ident
   closed_binder open_binders binder binders binders_fixannot
   record_declaration typeclass_constraint pattern appl_arg;
-  Constr.ident:
+  Pcoq.Constr.ident:
     [ [ id = Prim.ident -> id
 
       (* This is used in quotations and Syntax *)

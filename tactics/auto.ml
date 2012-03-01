@@ -1453,7 +1453,7 @@ let rec super_search n db_list local_db argl gl =
 let search_superauto n to_add argl g =
   let sigma =
     List.fold_right
-      (fun (id,c) -> add_named_decl (id, None, pf_type_of g c))
+      (fun (id,c) -> add_named_decl (var_decl_of_name id (pf_type_of g c)))
       to_add empty_named_context in
   let db0 = list_map_append (make_resolve_hyp (pf_env g) (project g)) sigma in
   let db = Hint_db.add_list db0 (make_local_hint_db false [] g) in

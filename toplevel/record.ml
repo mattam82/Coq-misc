@@ -37,7 +37,11 @@ let interp_fields_evars evars env impls_env nots l =
   List.fold_left2
     (fun (env, uimpls, params, impls) no ((loc, i), b, t) ->
       let impl, t' = interp_evars evars env impls Pretyping.IsType t in
-      let b' = Option.map (fun x -> snd (interp_evars evars env impls (Pretyping.OfType (Some t')) x)) b in
+      let b' = 
+	Option.cata 
+	  (fun x -> 
+	     let _, x' = interp_evars evars env impls (Pretyping.OfType (Some t')) x in
+	       definition_body x') variable_body b in
       let impls =
 	match i with
 	| Anonymous -> impls
@@ -71,7 +75,7 @@ let typecheck_params_and_fields id t ps nots fs =
   in 
   let impls_env, ((env1,newps), imps) = interp_context_evars evars env0 ps in
   let fullarity = it_mkProd_or_LetIn (Option.cata (fun x -> x) (Termops.new_Type ()) t) newps in
-  let env_ar = push_rel_context newps (push_rel (Name id,None,fullarity) env0) in
+  let env_ar = push_rel_context newps (push_rel (var_decl_of_name (Name id) fullarity) env0) in
   let env2,impls,newfs,data =
     interp_fields_evars evars env_ar impls_env nots (binders_of_decls fs)
   in
@@ -81,15 +85,15 @@ let typecheck_params_and_fields id t ps nots fs =
   let newps = Evarutil.nf_rel_context_evar sigma newps in
   let newfs = Evarutil.nf_rel_context_evar sigma newfs in
   let ce t = Evarutil.check_evars env0 Evd.empty evars t in
-    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) (List.rev newps);
-    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) (List.rev newfs);
+    List.iter (fun (n, b, t) -> iter_body ce b; ce t) (List.rev newps);
+    List.iter (fun (n, b, t) -> iter_body ce b; ce t) (List.rev newfs);
     imps, newps, impls, newfs
 
 let degenerate_decl (na,b,t) =
   let id = match na with
     | Name id -> id
     | Anonymous -> anomaly "Unnamed record variable" in
-  match b with
+  match constr_of_body b with
     | None -> (id, Entries.LocalAssum t)
     | Some b -> (id, Entries.LocalDef b)
 
@@ -185,7 +189,7 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
 	  | Name fid ->
             try
               let ccl = subst_projection fid subst ti in
-	      let body = match optci with
+	      let body = match constr_of_body optci with
               | Some ci -> subst_projection fid subst ci
               | None ->
 	        (* [ccl] is defined in context [params;x:rp] *)
@@ -225,7 +229,7 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
             with NotDefinable why ->
 	      warning_or_error coe indsp why;
 	      (None::sp_projs,NoProjection fi::subst) in
-      (nfi-1,(fi, optci=None)::kinds,sp_projs,subst))
+      (nfi-1,(fi, is_variable_body optci)::kinds,sp_projs,subst))
       (List.length fields,[],[],[]) coers (List.rev fields) (List.rev fieldimpls)
   in (kinds,sp_projs)
 

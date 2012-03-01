@@ -284,11 +284,11 @@ let inductive_template evdref env tmloc ind =
     List.fold_right
       (fun (na,b,ty) (subst,evarl,n) ->
 	match b with
-        | None ->
+        | Variable _ ->
 	    let ty' = substl subst ty in
 	    let e = e_new_evar evdref env ~src:(hole_source n) ty' in
 	    (e::subst,e::evarl,n+1)
-	| Some b ->
+	| Definition (_, b) ->
 	    (substl subst b::subst,evarl,n+1))
       arsign ([],[],1) in
    applist (mkInd ind,List.rev evarl)
@@ -312,7 +312,7 @@ let binding_vars_of_inductive = function
   | IsInd (_,IndType(_,realargs),_) -> List.filter isRel realargs
 
 let extract_inductive_data env sigma (_,b,t) =
-  if b<>None then (NotInd (None,t),[]) else
+  if not (is_variable_body b) then (NotInd (None,t),[]) else
   let tmtyp =
     try try_find_ind env sigma t None
     with Not_found -> NotInd (None,t) in
@@ -434,7 +434,7 @@ let remove_current_pattern eqn =
 let push_current_pattern (cur,ty) eqn =
   match eqn.patterns with
     | pat::pats ->
-        let rhs_env = push_rel (alias_of_pat pat,Some cur,ty) eqn.rhs.rhs_env in
+        let rhs_env = push_rel (def_decl_of_name (alias_of_pat pat) cur ty) eqn.rhs.rhs_env in
 	{ eqn with
             rhs = { eqn.rhs with rhs_env = rhs_env };
 	    patterns = pats }
@@ -449,9 +449,9 @@ let prepend_pattern tms eqn = {eqn with patterns = tms@eqn.patterns }
 exception NotAdjustable
 
 let rec adjust_local_defs loc = function
-  | (pat :: pats, (_,None,_) :: decls) ->
+  | (pat :: pats, (_,Variable _,_) :: decls) ->
       pat :: adjust_local_defs loc (pats,decls)
-  | (pats, (_,Some _,_) :: decls) ->
+  | (pats, (_,Definition _,_) :: decls) ->
       PatVar (loc, Anonymous) :: adjust_local_defs loc (pats,decls)
   | [], [] -> []
   | _ -> raise NotAdjustable
@@ -523,13 +523,9 @@ let dependencies_in_pure_rhs nargs eqns =
   let deps_columns = matrix_transpose deps_rows in
   List.map (List.exists ((=) true)) deps_columns
 
-let dependent_decl a = function
-  | (na,None,t) -> dependent a t
-  | (na,Some c,t) -> dependent a t || dependent a c
-
 let rec dep_in_tomatch n = function
   | (Pushed _ | Alias _ | NonDepAlias) :: l -> dep_in_tomatch n l
-  | Abstract (_,d) :: l -> dependent_decl (mkRel n) d or dep_in_tomatch (n+1) l
+  | Abstract (_,d) :: l -> dependent_in_decl (mkRel n) d or dep_in_tomatch (n+1) l
   | [] -> false
 
 let dependencies_in_rhs nargs current tms eqns =
@@ -553,7 +549,7 @@ let rec find_dependency_list tmblock = function
   | [] -> []
   | (used,tdeps,d)::rest ->
       let deps = find_dependency_list tmblock rest in
-      if used && List.exists (fun x -> dependent_decl x d) tmblock
+      if used && List.exists (fun x -> dependent_in_decl x d) tmblock
       then list_add_set (List.length rest + 1) (list_union deps tdeps)
       else deps
 
@@ -1036,10 +1032,11 @@ let postprocess_dependencies evd tocheck brs tomatch pred deps cs =
   | [], _ -> brs,tomatch,pred,[]
   | n::deps, Abstract (i,d) :: tomatch ->
       let d = map_rel_declaration (nf_evar evd) d in
-      if List.exists (fun c -> dependent_decl (lift k c) d) tocheck || pi2 d <> None then
+      if List.exists (fun c -> dependent_in_decl (lift k c) d) tocheck 
+	|| not (is_variable_body (pi2 d)) then
         (* Dependency in the current term to match and its dependencies is real *)
         let brs,tomatch,pred,inst = aux (k+1) brs tomatch pred (mkRel n::tocheck) deps in
-        let inst = if pi2 d = None then mkRel n::inst else inst in
+        let inst = if is_variable_body (pi2 d) then mkRel n::inst else inst in
         brs, Abstract (i,d) :: tomatch, pred, inst
       else
         (* Finally, no dependency remains, so, we can replace the generalized *)
@@ -1100,7 +1097,7 @@ let rec generalize_problem names pb = function
   | i::l ->
       let (na,b,t as d) = map_rel_declaration (lift i) (Environ.lookup_rel i pb.env) in
       let pb',deps = generalize_problem names pb l in
-      if na = Anonymous & b <> None then pb',deps else
+      if na = Anonymous & not (is_variable_body b) then pb',deps else
       let d = on_pi3 (whd_betaiota !(pb.evdref)) d in (* for better rendering *)
       let tomatch = lift_tomatch_stack 1 pb'.tomatch in
       let tomatch = relocate_index_tomatch (i+1) 1 tomatch in
@@ -1282,7 +1279,7 @@ and shift_problem ((current,t),_,na) pb =
   let pred = specialize_predicate_var (current,t,na) pb.tomatch pb.pred in
   let pb =
     { pb with
-       env = push_rel (na,Some current,ty) pb.env;
+       env = push_rel (def_decl_of_name na current ty) pb.env;
        tomatch = tomatch;
        pred = lift_predicate 1 pred tomatch;
        history = pop_history pb.history;
@@ -1309,7 +1306,7 @@ and compile_generalization pb i d rest =
 
 and compile_alias pb (na,orig,(expanded,expanded_typ)) rest =
   let f c t =
-    let alias = (na,Some c,t) in
+    let alias = def_decl_of_name na c t in
     let pb =
       { pb with
          env = push_rel alias pb.env;
@@ -1417,7 +1414,7 @@ let adjust_to_extended_env_and_remove_deps env extenv subst t =
     (* \--------------extenv------------/ *)
     let (p,_,_) = lookup_rel_id x (rel_context extenv) in
     let rec traverse_local_defs p =
-      match pi2 (lookup_rel p extenv) with
+      match rel_value p extenv with
       | Some c -> assert (isRel c); traverse_local_defs (p + destRel c)
       | None -> p in
     let p = traverse_local_defs p in
@@ -1459,7 +1456,7 @@ let abstract_tycon loc env evdref subst _tycon extenv t =
      convertible subterms of the substitution *)
   let rec aux (k,env,subst as x) t =
     let t = whd_evar !evdref t in match kind_of_term t with
-    | Rel n when pi2 (lookup_rel n env) <> None ->
+    | Rel n when rel_value n env <> None ->
         map_constr_with_full_binders push_binder aux x t
     | Evar ev ->
         let ty = get_type_of env sigma t in
@@ -1554,7 +1551,7 @@ let build_inversion_problem loc env sigma tms t =
 	patl@pat::patl',acc_sign,acc
     | (t, NotInd (bo,typ)) :: tms ->
       let pat,acc = make_patvar t acc in
-      let d = (alias_of_pat pat,None,t) in
+      let d = var_decl_of_name (alias_of_pat pat) t in
       let patl,acc_sign,acc = aux (n+1) (push_rel d env) (d::acc_sign) tms acc in
       pat::patl,acc_sign,acc in
   let avoid0 = ids_of_context env in
@@ -1647,7 +1644,9 @@ let extract_arity_signature env0 tomatchl tmsign =
     match tm with
       | NotInd (bo,typ) ->
 	  (match t with
-	    | None -> [na,Option.map (lift n) bo,lift n typ]
+	    | None -> 
+		(match bo with None -> [var_decl_of_name na (lift n typ)]
+		 | Some b -> [def_decl_of_name na (lift n b) (lift n typ)])
 	    | Some (loc,_,_,_) ->
  	    user_err_loc (loc,"",
 	    str"Unexpected type annotation for a term of non inductive type."))
@@ -1666,8 +1665,8 @@ let extract_arity_signature env0 tomatchl tmsign =
 		      anomaly "Ill-formed 'in' clause in cases";
 		  List.rev realnal
 	      | None -> list_make nrealargs_ctxt Anonymous in
-	  (na,None,build_dependent_inductive env0 indf')
-	  ::(List.map2 (fun x (_,c,t) ->(x,c,t)) realnal arsign) in
+	  (var_decl_of_name na (build_dependent_inductive env0 indf'))
+	  ::(List.map2 (fun x (na,c,t) ->(x,c,t)) realnal arsign) in
   let rec buildrec n = function
     | [],[] -> []
     | (_,tm)::ltm, (_,x)::tmsign ->
@@ -1809,7 +1808,11 @@ let compile_cases loc style (typing_fun, evdref) tycon env (predopt, tomatchl, e
     (* names of aliases will be recovered from patterns (hence Anonymous *)
     (* here) *)
 
-    let out_tmt na = function NotInd (c,t) -> (na,c,t) | IsInd (typ,_,_) -> (na,None,typ) in
+    let out_tmt na = function 
+      | NotInd (c,t) -> 
+	  (match c with None -> var_decl_of_name na t
+	   | Some c -> def_decl_of_name na c t)
+      | IsInd (typ,_,_) -> var_decl_of_name na typ in
     let typs = List.map2 (fun na (tm,tmt) -> (tm,out_tmt na tmt)) nal tomatchs in
 
     let typs =

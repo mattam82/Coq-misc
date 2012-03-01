@@ -20,6 +20,8 @@ open Evarutil
 open Libnames
 open Evd
 
+open Constr
+
 type flex_kind_of_term =
   | Rigid of constr
   | PseudoRigid of constr (* approximated as rigid but not necessarily so *)
@@ -43,12 +45,12 @@ let eval_flexible_term ts env c =
       then constant_opt_value env c
       else None
   | Rel n ->
-      (try let (_,v,_) = lookup_rel n env in Option.map (lift n) v
+      (try Option.map (lift n) (rel_value n env)
       with Not_found -> None)
   | Var id ->
       (try
 	 if is_transparent_variable ts id then
-	   let (_,v,_) = lookup_named id env in v 
+	   named_value id env
 	 else None 
        with Not_found -> None)
   | LetIn (_,b,_,c) -> Some (subst1 b c)
@@ -300,7 +302,7 @@ and evar_eqappr_x ?(rhs_is_stuck_proj = false)
 	     (fun i ->
 	       let b = nf_evar i b1 in
 	       let t = nf_evar i t1 in
-	       evar_conv_x ts (push_rel (na,Some b,t) env) i pbty c'1 c'2);
+	       evar_conv_x ts (push_rel (def_decl_of na b t) env) i pbty c'1 c'2);
 	     (fun i -> ise_list2 i (fun i -> evar_conv_x ts env i CONV) l1 l2)]
 	and f2 i =
           let appr1 = evar_apprec ts env i l1 (subst1 b1 c'1)
@@ -358,7 +360,7 @@ and evar_eqappr_x ?(rhs_is_stuck_proj = false)
           [(fun i -> evar_conv_x ts env i CONV c1 c2);
            (fun i ->
 	     let c = nf_evar i c1 in
-	     evar_conv_x ts (push_rel (na,None,c) env) i CONV c'1 c'2)]
+	     evar_conv_x ts (push_rel (var_decl_of na c) env) i CONV c'1 c'2)]
 
     | Flexible ev1, (Rigid _ | PseudoRigid _) ->
 	(match is_unification_pattern_evar env evd ev1 l1 (applist appr2) with
@@ -417,7 +419,7 @@ and evar_eqappr_x ?(rhs_is_stuck_proj = false)
 	assert (l1 = []);
 	let (na,c1,c'1) = destLambda c1 in
         let c = nf_evar evd c1 in
-	let env' = push_rel (na,None,c) env in
+	let env' = push_rel (var_decl_of na c) env in
         let appr1 = evar_apprec ts env' evd [] c'1 in
 	let appr2 = (lift 1 term2, List.map (lift 1) l2 @ [mkRel 1]) in
 	evar_eqappr_x ts env' evd CONV appr1 appr2
@@ -426,7 +428,7 @@ and evar_eqappr_x ?(rhs_is_stuck_proj = false)
 	assert (l2 = []);
 	let (na,c2,c'2) = destLambda c2 in
         let c = nf_evar evd c2 in
-	let env' = push_rel (na,None,c) env in
+	let env' = push_rel (var_decl_of na c) env in
 	let appr1 = (lift 1 term1, List.map (lift 1) l1 @ [mkRel 1]) in
         let appr2 = evar_apprec ts env' evd [] c'2 in
 	evar_eqappr_x ts env' evd CONV appr1 appr2
@@ -449,7 +451,7 @@ and evar_eqappr_x ?(rhs_is_stuck_proj = false)
               [(fun i -> evar_conv_x ts env i CONV c1 c2);
                (fun i ->
  	         let c = nf_evar i c1 in
-	         evar_conv_x ts (push_rel (n,None,c) env) i pbty c'1 c'2)]
+	         evar_conv_x ts (push_rel (var_decl_of n c) env) i pbty c'1 c'2)]
 
 	| Ind sp1, Ind sp2 ->
 	    if eq_ind sp1 sp2 then

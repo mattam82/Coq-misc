@@ -159,21 +159,21 @@ let build_signature evars env m (cstrs : (types * types option) option list)
   in
   let rec aux env evars ty l =
     let t = Reductionops.whd_betadeltaiota env (fst evars) ty in
-      match kind_of_term t, l with
-      | Prod (na, ty, b), obj :: cstrs ->
+      match Constr.kind_of_term t, l with
+      | Constr.Prod (na, ty, b), obj :: cstrs ->
 	  if noccurn 1 b (* non-dependent product *) then
 	    let ty = Reductionops.nf_betaiota (fst evars) ty in
 	    let (evars, b', arg, cstrs) = aux env evars (subst1 mkProp b) cstrs in
 	    let evars, relty = mk_relty evars env ty obj in
 	    let newarg = mkApp (Lazy.force respectful, [| ty ; b' ; relty ; arg |]) in
-	      evars, mkProd(na, ty, b), newarg, (ty, Some relty) :: cstrs
+	      evars, Constr.mkProd(na, ty, b), newarg, (ty, Some relty) :: cstrs
 	  else
-	    let (evars, b, arg, cstrs) = aux (Environ.push_rel (na, None, ty) env) evars b cstrs in
+	    let (evars, b, arg, cstrs) = aux (Environ.push_rel (var_decl_of na ty) env) evars b cstrs in
 	    let ty = Reductionops.nf_betaiota (fst evars) ty in
-	    let pred = mkLambda (na, ty, b) in
-	    let liftarg = mkLambda (na, ty, arg) in
+	    let pred = Constr.mkLambda (na, ty, b) in
+	    let liftarg = Constr.mkLambda (na, ty, arg) in
 	    let arg' = mkApp (Lazy.force forall_relation, [| ty ; pred ; liftarg |]) in
-	      if obj = None then evars, mkProd(na, ty, b), arg', (ty, None) :: cstrs
+	      if obj = None then evars, Constr.mkProd(na, ty, b), arg', (ty, None) :: cstrs
 	      else error "build_signature: no constraint can apply on a dependent argument"
       | _, obj :: _ -> anomaly "build_signature: not enough products"
       | _, [] ->
@@ -501,16 +501,16 @@ let lift_cstr env sigma evars (args : constr list) c ty cstr =
   let rec aux env prod n = 
     if n = 0 then start env prod
     else
-      match kind_of_term (Reduction.whd_betadeltaiota env prod) with
-      | Prod (na, ty, b) ->
+      match Constr.kind_of_term (Reduction.whd_betadeltaiota env prod) with
+      | Constr.Prod (na, ty, b) ->
 	  if noccurn 1 b then
 	    let b' = lift (-1) b in
 	    let rb = aux env b' (pred n) in
 	      mkApp (Lazy.force pointwise_relation, [| ty; b'; rb |])
 	  else
-	    let rb = aux (Environ.push_rel (na, None, ty) env) b (pred n) in
+	    let rb = aux (Environ.push_rel (var_decl_of na ty) env) b (pred n) in
 	      mkApp (Lazy.force forall_relation, 
-		    [| ty; mkLambda (na, ty, b); mkLambda (na, ty, rb) |])
+		    [| ty; Constr.mkLambda (na, ty, b); Constr.mkLambda (na, ty, rb) |])
       | _ -> raise Not_found
   in 
   let rec find env c ty = function
@@ -591,7 +591,8 @@ let resolve_morphism env avoid oldt m ?(fnewt=fun x -> x) args args' cstr evars 
     let cl_args = [| appmtype' ; signature ; appm |] in
     let app = mkApp (Lazy.force proper_type, cl_args) in
     let env' = Environ.push_named
-      (id_of_string "do_subrelation", Some (Lazy.force do_subrelation), Lazy.force apply_subrelation)
+      (id_of_string "do_subrelation", 
+       Definition (Irr, Lazy.force do_subrelation), Lazy.force apply_subrelation)
       env
     in
     let evars, morph = new_cstr_evar evars env' app in
@@ -847,7 +848,7 @@ let subterm all flags (s : strategy) : strategy =
 
       | Lambda (n, t, b) when flags.under_lambdas ->
 	  let n' = name_app (fun id -> Tactics.fresh_id_in_env avoid id env) n in
-	  let env' = Environ.push_rel (n', None, t) env in
+	  let env' = Environ.push_rel (var_decl_of_name n' t) env in
 	  let b' = s env' avoid b (Typing.type_of env' (goalevars evars) b) (unlift_cstr env (goalevars evars) cstr) evars in
 	    (match b' with
 	    | Some (Some r) ->
@@ -1234,7 +1235,7 @@ let assert_replacing id newt tac =
 			fold_named_context
 			  (fun _ (n, b, t) inst ->
 			     if n = id then ev' :: inst
-			     else if b = None then mkVar n :: inst else inst)
+			     else if is_variable_body b then mkVar n :: inst else inst)
 			  env ~init:[]
 		      in
 		      let (e, args) = destEvar ev in
@@ -1254,7 +1255,7 @@ let cl_rewrite_clause_newtac ?abs strat clause =
 	| Some id, (undef, Some p, newt) ->
 	    assert_replacing id newt (Proofview.tclSENSITIVE (new_refine (undef, p)))
 	| Some id, (undef, None, newt) -> 
-	    Proofview.tclSENSITIVE (Goal.convert_hyp false (id, None, newt))
+	    Proofview.tclSENSITIVE (Goal.convert_hyp false (var_decl_of_name id newt))
 	| None, (undef, Some p, newt) ->
 	    let refable = Goal.Refinable.make
 	      (fun handle -> 
@@ -1940,7 +1941,7 @@ let implify id gl =
   let binders,concl = decompose_prod_assum ctype in
   let ctype' =
     match binders with
-    | (_, None, ty as hd) :: tl when noccurn 1 concl ->
+    | (_, Variable _, ty as hd) :: tl when noccurn 1 concl ->
 	let env = Environ.push_rel_context tl (pf_env gl) in
 	let sigma = project gl in
 	let tyhd = Typing.type_of env sigma ty

@@ -1708,7 +1708,7 @@ let interp_rawcontext_gen understand_type understand_judgment env bl =
 	    None ->
 	      let t' = locate_if_isevar (loc_of_glob_constr t) na t in
 	      let t = understand_type env t' in
-	      let d = (na,None,t) in
+	      let d = var_decl_of_name na t in
 	      let impls =
 		if k = Implicit then
 		  let na = match na with Name n -> Some n | Anonymous -> None in
@@ -1718,7 +1718,8 @@ let interp_rawcontext_gen understand_type understand_judgment env bl =
 		(push_rel d env, d::params, succ n, impls)
 	  | Some b ->
 	      let c = understand_judgment env b in
-	      let d = (na, Some c.uj_val, c.uj_type) in
+		(* FIXME *)
+	      let d = def_decl_of_name na c.uj_val c.uj_type in
 		(push_rel d env, d::params, succ n, impls))
       (env,[],1,[]) (List.rev bl)
   in (env, par), impls

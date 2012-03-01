@@ -79,6 +79,7 @@ type implicit = bool
 
 type 'a binder_annot = 'a * (relevance * implicit)
 type 'a letbinder_annot = 'a * relevance
+type app_annot = relevance * relevance array
 
 (* [constr array] is an instance matching definitional [named_context] in
    the same order (i.e. last argument first) *)
@@ -92,6 +93,18 @@ type ('constr, 'types) pcofixpoint =
 
 let name_of (name, annot) = name
 let letname_of (name, annot) = name
+
+let relevance_of (_, (rel, _)) = rel
+let letrelevance_of (_, rel) = rel
+
+let map_binder f (name, annot) = (f name, annot)
+let map_letbinder f (name, annot) = (f name, annot)
+
+let default_annot = (Expl, false)
+let default_letannot = Expl
+
+let binder_annot_of name = name, default_annot
+let letbinder_annot_of name = name, default_letannot
 
 let merge_rel i i' =
   if i = Irr || i' = Irr then Irr else Expl
@@ -110,7 +123,7 @@ module Constr = struct
     | Prod      of name binder_annot * 'types * 'types
     | Lambda    of name binder_annot * 'types * 'constr
     | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
-    | App       of 'constr * (relevance * relevance array) * 'constr array
+    | App       of 'constr * app_annot * 'constr array
     | Const     of constant
     | Ind       of inductive
     | Construct of constructor
@@ -130,6 +143,22 @@ module Constr = struct
       | App (g, (gi, r'), cl) -> 
 	App (g, (merge_rel gi r, Array.append r' ra), Array.append cl a)
       | _ -> App (f, (r, ra), a)
+
+  let destProd = function
+    | Prod (na, b, t) -> (na, b, t)
+    | _ -> invalid_arg "destProd"
+
+  let destLambda = function
+    | Lambda (na, b, t) -> (na, b, t)
+    | _ -> invalid_arg "destLambda"
+
+  let destLetIn = function
+    | LetIn (na, t, b, b') -> (na, t, b, b')
+    | _ -> invalid_arg "destLetIn"
+
+  let destApp = function
+    | App (f,ann,args) -> (f, ann, args)
+    | _ -> invalid_arg "destApp"
 
   let kind_of_term c = c
 
@@ -693,25 +722,33 @@ let var_decl_of (na, annot) ty = (na, Variable annot, ty)
 let def_decl_of (na, annot) c ty = (na, Definition (annot, c), ty)
 let fix_decl_of (na, annot) ty = (na, Variable (annot, false), ty)
 
+let var_decl_of_name n ty = var_decl_of (binder_annot_of n) ty
+let def_decl_of_name n c ty = def_decl_of (letbinder_annot_of n) c ty
+
 let map_body f = function
-  | Definition (impl, c) -> Definition (impl, f c)
+  | Definition (ann, c) -> Definition (ann, f c)
   | x -> x
 
 let smartmap_body f v =
   match v with
-  | Definition (impl, c) -> 
+  | Definition (ann, c) -> 
     let c' = f c in
-      if c' == c then v else Definition (impl, c')
+      if c' == c then v else Definition (ann, c')
   | x -> x
 
 let fold_right_body f v a =
   match v with
-  | Definition (impl, c) -> f c a
+  | Definition (ann, c) -> f c a
   | x -> a
+
+let fold_body f a v =
+  match v with
+  | Definition (ann, c) -> f a c
+  | Variable _ -> a
       
 let cata_body f def v =
   match v with
-  | Definition (impl, c) -> f c
+  | Definition (ann, c) -> f c
   | _ -> def
 
 let iter_body f = cata_body f ()
@@ -722,12 +759,13 @@ let compare_body f v v' =
   | Variable (irr, tag), Variable (irr', tag') -> irr = irr' && tag = tag'
   | _, _ -> false
   
+let map_declaration f (id, v, ty) = (id, map_body f v, f ty)
+let map_rel_declaration = map_declaration
+let map_named_declaration = map_declaration
 
-let map_named_declaration f (id, v, ty) = (id, map_body f v, f ty)
-let map_rel_declaration = map_named_declaration
-
-let fold_named_declaration f (_, v, ty) a = f ty (fold_right_body f v a)
-let fold_rel_declaration = fold_named_declaration
+let fold_declaration f (_, v, ty) a = f ty (fold_right_body f v a)
+let fold_rel_declaration = fold_declaration
+let fold_named_declaration = fold_declaration
 
 let exists_named_declaration f (_, v, ty) = cata_body f false v || f ty
 let exists_rel_declaration f (_, v, ty) = cata_body f false v || f ty
@@ -996,14 +1034,15 @@ let mkNamedLambda_or_LetIn (id,body,t) c =
 
 (* Now we lose information *)
 
-let default_annot = (Expl, false)
-let default_letannot = Expl
-
 let variable_body = Variable default_annot
 let definition_body c = Definition (default_letannot, c)
 let constr_of_body = function
   | Variable _ -> None
   | Definition (_, c) -> Some c
+
+let is_variable_body = function
+  | Variable _ -> true
+  | Definition _ -> false
 
 let from_name na = (na, default_annot)
 let named id = from_name (Name id)

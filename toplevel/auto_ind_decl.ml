@@ -277,11 +277,11 @@ let build_beq_scheme kn =
           mkNamedLambda (id_of_string "Y") (mkFullInd ind (nb_ind-1+2))  (
  	    mkCase (ci, do_predicate rel_list 0,mkVar (id_of_string "X"),ar)))
     in (* build_beq_scheme *)
-    let names = Array.make nb_ind Anonymous and
+    let names = Array.make nb_ind (letbinder_annot_of Anonymous) and
         types = Array.make nb_ind mkSet and
         cores = Array.make nb_ind mkSet in
     for i=0 to (nb_ind-1) do
-        names.(i) <- Name (id_of_string (rec_name i));
+        names.(i) <- (letbinder_annot_of (Name (id_of_string (rec_name i))));
 	types.(i) <- mkArrow (mkFullInd (kn,i) 0)
                      (mkArrow (mkFullInd (kn,i) 1) bb);
         cores.(i) <- make_one_eq i

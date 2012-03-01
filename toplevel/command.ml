@@ -33,11 +33,11 @@ open Indschemes
 
 let rec under_binders env f n c =
   if n = 0 then f env Evd.empty c else
-    match kind_of_term c with
-      | Lambda (x,t,c) ->
-	  mkLambda (x,t,under_binders (push_rel (x,None,t) env) f (n-1) c)
-      | LetIn (x,b,t,c) ->
-	  mkLetIn (x,b,t,under_binders (push_rel (x,Some b,t) env) f (n-1) c)
+    match Constr.kind_of_term c with
+      | Constr.Lambda (x,t,c) ->
+	  Constr.mkLambda (x,t,under_binders (push_rel (var_decl_of x t) env) f (n-1) c)
+      | Constr.LetIn (x,b,t,c) ->
+	  Constr.mkLetIn (x,b,t,under_binders (push_rel (def_decl_of x b t) env) f (n-1) c)
       | _ -> assert false
 
 let rec complete_conclusion a cs = function
@@ -173,11 +173,11 @@ let declare_assumptions idl is_coe k c imps impl_is_on nl =
 (* 3b| Mutual inductive definitions *)
 
 let push_named_types env idl tl =
-  List.fold_left2 (fun env id t -> Environ.push_named (id,None,t) env)
+  List.fold_left2 (fun env id t -> Environ.push_named (var_decl_of_name id t) env)
     env idl tl
 
 let push_types env idl tl =
-  List.fold_left2 (fun env id t -> Environ.push_rel (Name id,None,t) env)
+  List.fold_left2 (fun env id t -> Environ.push_rel (var_decl_of_name (Name id) t) env)
     env idl tl
 
 type structured_one_inductive_expr = {
@@ -210,8 +210,8 @@ let mk_mltype_data evdref env assums arity indname =
   (is_ml_type,indname,assums)
 
 let prepare_param = function
-  | (na,None,t) -> out_name na, LocalAssum t
-  | (na,Some b,_) -> out_name na, LocalDef b
+  | (na,Term.Variable _,t) -> out_name na, LocalAssum t
+  | (na,Term.Definition (_, b),_) -> out_name na, LocalDef b
 
 let interp_ind_arity evdref env ind =
   interp_type_evars_impls ~evdref env ind.ind_arity
@@ -234,7 +234,7 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
   let indnames = List.map (fun ind -> ind.ind_name) indl in
 
   (* Names of parameters as arguments of the inductive type (defs removed) *)
-  let assums = List.filter(fun (_,b,_) -> b=None) ctx_params in
+  let assums = List.filter(fun (_,b,_) -> is_variable_body b) ctx_params in
   let params = List.map (fun (na,_,_) -> out_name na) assums in
 
   (* Interpret the arities *)
@@ -489,7 +489,7 @@ let declare_fix kind f def t imps =
 
 let prepare_recursive_declaration fixnames fixtypes fixdefs =
   let defs = List.map (subst_vars (List.rev fixnames)) fixdefs in
-  let names = List.map (fun id -> Name id) fixnames in
+  let names = List.map (fun id -> letbinder_annot_of (Name id)) fixnames in
   (Array.of_list names, Array.of_list fixtypes, Array.of_list defs)
 
 (* Jump over let-bindings. *)
