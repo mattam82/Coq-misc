@@ -27,6 +27,8 @@ open Evarutil
 open Evarconv
 open Evd
 
+open Constr
+
 (* Pattern-matching errors *)
 
 type pattern_matching_error =
@@ -134,7 +136,7 @@ type 'a matrix = 'a equation list
 
 (* 1st argument of IsInd is the original ind before extracting the summary *)
 type tomatch_type =
-  | IsInd of types * inductive_type * name list
+  | IsInd of types * relevance * inductive_type * name list
   | NotInd of constr option * types
 
 type tomatch_status =
@@ -294,12 +296,13 @@ let inductive_template evdref env tmloc ind =
    applist (mkInd ind,List.rev evarl)
 
 let try_find_ind env sigma typ realnames =
-  let (IndType(_,realargs) as ind) = find_rectype env sigma typ in
+  let (IndType(indf,realargs) as ind) = find_rectype env sigma typ in
   let names =
     match realnames with
       | Some names -> names
       | None -> list_make (List.length realargs) Anonymous in
-  IsInd (typ,ind,names)
+  let arity,s = get_arity env indf in
+  IsInd (typ,relevance_of_sorts_family s,ind,names)
 
 let inh_coerce_to_ind evdref env ty tyi =
   let expected_typ = inductive_template evdref env None tyi in
@@ -309,7 +312,7 @@ let inh_coerce_to_ind evdref env ty tyi =
 
 let binding_vars_of_inductive = function
   | NotInd _ -> []
-  | IsInd (_,IndType(_,realargs),_) -> List.filter isRel realargs
+  | IsInd (_,_,IndType(_,realargs),_) -> List.filter isRel realargs
 
 let extract_inductive_data env sigma (_,b,t) =
   if not (is_variable_body b) then (NotInd (None,t),[]) else
@@ -373,7 +376,7 @@ let adjust_tomatch_to_pattern pb ((current,typ),deps,dep) =
      inductive type and it is not dependent; moreover, we use only
      the first pattern type and forget about the others *)
   let typ,names =
-    match typ with IsInd(t,_,names) -> t,Some names | NotInd(_,t) -> t,None in
+    match typ with IsInd(t,_,_,names) -> t,Some names | NotInd(_,t) -> t,None in
   let tmtyp =
     try try_find_ind pb.env !(pb.evdref) typ names
     with Not_found -> NotInd (None,typ) in
@@ -397,15 +400,11 @@ let adjust_tomatch_to_pattern pb ((current,typ),deps,dep) =
   | _ -> (current,tmtyp)
 
 let type_of_tomatch = function
-  | IsInd (t,_,_) -> t
-  | NotInd (_,t) -> t
-
-let mkDeclTomatch na = function
-  | IsInd (t,_,_) -> (na,None,t)
-  | NotInd (c,t) -> (na,c,t)
+  | IsInd (t,r,_,_) -> t,r
+  | NotInd (_,t) -> t,Expl
 
 let map_tomatch_type f = function
-  | IsInd (t,ind,names) -> IsInd (f t,map_inductive_type f ind,names)
+  | IsInd (t,r,ind,names) -> IsInd (f t,r,map_inductive_type f ind,names)
   | NotInd (c,t) -> NotInd (Option.map f c, f t)
 
 let liftn_tomatch_type n depth = map_tomatch_type (liftn n depth)
@@ -431,10 +430,10 @@ let remove_current_pattern eqn =
 	    alias_stack = alias_of_pat pat :: eqn.alias_stack }
     | [] -> anomaly "Empty list of patterns"
 
-let push_current_pattern (cur,ty) eqn =
+let push_current_pattern (cur,ty,r) eqn =
   match eqn.patterns with
     | pat::pats ->
-        let rhs_env = push_rel (def_decl_of_name (alias_of_pat pat) cur ty) eqn.rhs.rhs_env in
+        let rhs_env = push_rel (def_decl_of (alias_of_pat pat, r) cur ty) eqn.rhs.rhs_env in
 	{ eqn with
             rhs = { eqn.rhs with rhs_env = rhs_env };
 	    patterns = pats }
@@ -602,7 +601,7 @@ let rec replace_term n c k t =
 
 let length_of_tomatch_type_sign na = function
   | NotInd _ -> if na<>Anonymous then 1 else 0
-  | IsInd (_,_,names) -> List.length names + if na<>Anonymous then 1 else 0
+  | IsInd (_,_,_,names) -> List.length names + if na<>Anonymous then 1 else 0
 
 let replace_tomatch n c =
   let rec replrec depth = function
@@ -819,7 +818,7 @@ let specialize_predicate_var (cur,typ,dep) tms ccl =
   let c = if dep<>Anonymous then Some cur else None in
   let l =
     match typ with
-    | IsInd (_,IndType(_,realargs),names) -> if names<>[] then realargs else []
+    | IsInd (_,_,IndType(_,realargs),names) -> if names<>[] then realargs else []
     | NotInd _ -> [] in
   subst_predicate (l,c) ccl tms
 
@@ -861,7 +860,7 @@ let rec extract_predicate ccl = function
       let tms = if na<>Anonymous then lift_tomatch_stack 1 tms else tms in
       let pred = extract_predicate ccl tms in
       if na<>Anonymous then subst1 cur pred else pred
-  | Pushed ((cur,IsInd (_,IndType(_,realargs),_)),_,na)::tms ->
+  | Pushed ((cur,IsInd (_,_,IndType(_,realargs),_)),_,na)::tms ->
       let realargs = List.rev realargs in
       let k = if na<>Anonymous then 1 else 0 in
       let tms = lift_tomatch_stack (List.length realargs + k) tms in
@@ -986,7 +985,7 @@ let find_predicate loc env evdref p current (IndType (indf,realargs)) dep tms =
 let adjust_predicate_from_tomatch tomatch (current,typ as ct) pb =
   let ((_,oldtyp),deps,na) = tomatch in
   match typ, oldtyp with
-  | IsInd (_,_,names), NotInd _ ->
+  | IsInd (_,_,_,names), NotInd _ ->
       let k = if na <> Anonymous then 2 else 1 in
       let n = List.length names in
       { pb with pred = liftn_predicate n k pb.pred pb.tomatch },
@@ -1018,10 +1017,10 @@ let rec ungeneralize n ng body =
         let sign,b = decompose_lam_n_assum q c in
         it_mkLambda_or_LetIn (ungeneralize (n+q) ng b) sign)
         ci.ci_cstr_ndecls brs)
-  | App (f,args) ->
+  | App (f,an,args) ->
       (* We traverse an inner generalization *)
       assert (isCase f);
-      mkApp (ungeneralize n (ng+Array.length args) f,args)
+      mkApp (ungeneralize n (ng+Array.length args) f,an,args)
   | _ -> assert false
 
 let ungeneralize_branch n k (sign,body) cs =
@@ -1242,10 +1241,10 @@ and match_current pb tomatch =
     | NotInd (_,typ) ->
 	check_all_variables typ pb.mat;
 	shift_problem tomatch pb
-    | IsInd (_,(IndType(indf,realargs) as indt),names) ->
+    | IsInd (_,_,(IndType(indf,realargs) as indt),names) ->
 	let mind,_ = dest_ind_family indf in
 	let cstrs = get_constructors pb.env indf in
-	let arsign, _ = get_arity pb.env indf in
+	let arsign, sf = get_arity pb.env indf in
 	let eqns,onlydflt = group_equations pb mind current cstrs pb.mat in
 	if (Array.length cstrs <> 0 or pb.mat <> []) & onlydflt  then
 	  shift_problem tomatch pb
@@ -1274,16 +1273,16 @@ and match_current pb tomatch =
 
 (* Building the sub-problem when all patterns are variables *)
 and shift_problem ((current,t),_,na) pb =
-  let ty = type_of_tomatch t in
+  let ty, rel = type_of_tomatch t in
   let tomatch = lift_tomatch_stack 1 pb.tomatch in
   let pred = specialize_predicate_var (current,t,na) pb.tomatch pb.pred in
   let pb =
     { pb with
-       env = push_rel (def_decl_of_name na current ty) pb.env;
+       env = push_rel (def_decl_of (na, rel) current ty) pb.env;
        tomatch = tomatch;
        pred = lift_predicate 1 pred tomatch;
        history = pop_history pb.history;
-       mat = List.map (push_current_pattern (current,ty)) pb.mat } in
+       mat = List.map (push_current_pattern (current,ty,rel)) pb.mat } in
   let j = compile pb in
   { uj_val = subst1 current j.uj_val;
     uj_type = subst1 current j.uj_type }
@@ -1306,7 +1305,9 @@ and compile_generalization pb i d rest =
 
 and compile_alias pb (na,orig,(expanded,expanded_typ)) rest =
   let f c t =
-    let alias = def_decl_of_name na c t in
+    let sort = Retyping.get_sort_family_of pb.env !(pb.evdref) t in
+    let rel = Typeops.relevance_of_sorts_family sort in
+    let alias = def_decl_of (na, rel) c t in
     let pb =
       { pb with
          env = push_rel alias pb.env;
@@ -1319,7 +1320,7 @@ and compile_alias pb (na,orig,(expanded,expanded_typ)) rest =
         if isRel c || isVar c || count_occurrences (mkRel 1) j.uj_val <= 1 then
           subst1 c j.uj_val
         else
-          mkLetIn (na,c,t,j.uj_val);
+          mkLetIn ((na,rel),c,t,j.uj_val);
       uj_type = subst1 c j.uj_type } in
   if isRel orig or isVar orig then
     (* Try to compile first using non expanded alias *)
@@ -1529,7 +1530,7 @@ let build_inversion_problem loc env sigma tms t =
   let rec reveal_pattern t (subst,avoid as acc) =
     match kind_of_term (whd_betadeltaiota env sigma t) with
     | Construct cstr -> PatCstr (dummy_loc,cstr,[],Anonymous), acc
-    | App (f,v) when isConstruct f ->
+    | App (f,an,v) when isConstruct f ->
 	let cstr = destConstruct f in
 	let n = constructor_nrealargs env cstr in
 	let l = list_lastn n (Array.to_list v) in
@@ -1539,7 +1540,7 @@ let build_inversion_problem loc env sigma tms t =
   let rec aux n env acc_sign tms acc =
     match tms with
     | [] -> [], acc_sign, acc
-    | (t, IsInd (_,IndType(indf,realargs),_)) :: tms ->
+    | (t, IsInd (_,_,IndType(indf,realargs),_)) :: tms ->
 	let patl,acc = list_fold_map' reveal_pattern realargs acc in
 	let pat,acc = make_patvar t acc in
 	let indf' = lift_inductive_family n indf in
@@ -1650,11 +1651,11 @@ let extract_arity_signature env0 tomatchl tmsign =
 	    | Some (loc,_,_,_) ->
  	    user_err_loc (loc,"",
 	    str"Unexpected type annotation for a term of non inductive type."))
-      | IsInd (term,IndType(indf,realargs),_) ->
+      | IsInd (term,_,IndType(indf,realargs),_) ->
           let indf' = lift_inductive_family n indf in
 	  let (ind,_) = dest_ind_family indf' in
 	  let nparams_ctxt,nrealargs_ctxt = inductive_nargs_env env0 ind in
-	  let arsign = fst (get_arity env0 indf') in
+	  let arsign, s = get_arity env0 indf' in
 	  let realnal =
 	    match t with
 	      | Some (loc,ind',nparams,realnal) ->
@@ -1665,7 +1666,8 @@ let extract_arity_signature env0 tomatchl tmsign =
 		      anomaly "Ill-formed 'in' clause in cases";
 		  List.rev realnal
 	      | None -> list_make nrealargs_ctxt Anonymous in
-	  (var_decl_of_name na (build_dependent_inductive env0 indf'))
+	  let binder = (na, (Typeops.relevance_of_sorts_family s, false)) in
+	    (var_decl_of binder (build_dependent_inductive env0 indf'))
 	  ::(List.map2 (fun x (na,c,t) ->(x,c,t)) realnal arsign) in
   let rec buildrec n = function
     | [],[] -> []
@@ -1698,7 +1700,7 @@ let prepare_predicate_from_arsign_tycon loc tomatchs arsign c =
 				      maybe some variable in its type appears in the tycon. *) ->
 	      (match tmtype with
 		  NotInd _ -> (subst, len - signlen)
-		| IsInd (_, IndType(indf,realargs),_) ->
+		| IsInd (_, _, IndType(indf,realargs),_) ->
 		    let subst =
 		      if dependent tm c && List.for_all isRel realargs
 		      then (n, 1) :: subst else subst
@@ -1812,7 +1814,7 @@ let compile_cases loc style (typing_fun, evdref) tycon env (predopt, tomatchl, e
       | NotInd (c,t) -> 
 	  (match c with None -> var_decl_of_name na t
 	   | Some c -> def_decl_of_name na c t)
-      | IsInd (typ,_,_) -> var_decl_of_name na typ in
+      | IsInd (typ,r,_,_) -> var_decl_of (na, (r, false)) typ in
     let typs = List.map2 (fun na (tm,tmt) -> (tm,out_tmt na tmt)) nal tomatchs in
 
     let typs =

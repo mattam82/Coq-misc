@@ -195,7 +195,7 @@ let rec evar_conv_x ts env evd pbty term1 term2 =
 	    (position_problem false pbty,destEvar term2,term1)
         else
           evar_eqappr_x ts env evd pbty
-            (decompose_app term1) (decompose_app term2)
+            (Term.decompose_app term1) (Term.decompose_app term2)
 
 and evar_eqappr_x ?(rhs_is_stuck_proj = false)
   ts env evd pbty (term1,l1 as appr1) (term2,l2 as appr2) =
@@ -713,8 +713,8 @@ let second_order_matching_with_args ts env evd ev l t =
 let apply_conversion_problem_heuristic ts env evd pbty t1 t2 =
   let t1 = apprec_nohdbeta ts env evd (whd_head_evar evd t1) in
   let t2 = apprec_nohdbeta ts env evd (whd_head_evar evd t2) in
-  let (term1,l1 as appr1) = decompose_app t1 in
-  let (term2,l2 as appr2) = decompose_app t2 in
+  let (term1,l1 as appr1) = Term.decompose_app t1 in
+  let (term2,l2 as appr2) = Term.decompose_app t2 in
   match kind_of_term term1, kind_of_term term2 with
   | Evar (evk1,args1), (Rel _|Var _) when l1 = [] & l2 = []
       & array_for_all (fun a -> eq_constr a term2 or isEvar a) args1 ->

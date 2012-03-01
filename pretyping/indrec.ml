@@ -68,15 +68,18 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
 
   let indf = make_ind_family(ind, Termops.extended_rel_list 0 lnamespar) in
   let constrs = get_constructors env indf in
+  let _, sf = get_arity env' indf in
+  let binder = (Anonymous, (Typeops.relevance_of_sorts_family sf, false)) in
 
   let rec add_branch env k =
     if k = Array.length mip.mind_consnames then
       let nbprod = k+1 in
 
       let indf' = lift_inductive_family nbprod indf in
-      let arsign,_ = get_arity env indf' in
+      let arsign,sf = get_arity env indf' in
       let depind = build_dependent_inductive env indf' in
-      let deparsign = (var_decl_of_name Anonymous depind)::arsign in
+      let decl = var_decl_of binder depind in
+      let deparsign = decl::arsign in
 
       let ci = make_case_info env ind RegularStyle in
       let pbody =
@@ -86,8 +89,9 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
            else Termops.extended_rel_vect 1 arsign) in
       let p =
 	it_mkLambda_or_LetIn_name env'
-	  ((if dep then mkLambda_name env' else mkLambda)
-	   (Anonymous,depind,pbody))
+	  ((if dep then it_mkLambda_or_LetIn_name env' else it_mkLambda_or_LetIn)
+	     pbody
+	     [decl])
           arsign
       in
       it_mkLambda_or_LetIn_name env'
@@ -99,12 +103,13 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       let cs = lift_constructor (k+1) constrs.(k) in
       let t = build_branch_type env dep (mkRel (k+1)) cs in
       mkLambda_string "f" t
-	(add_branch (push_rel (var_decl_of_name Anonymous t) env) (k+1))
+	(add_branch (push_rel (var_decl_of binder t) env) (k+1))
   in
   let typP = make_arity env' dep indf (Termops.new_sort_in_family kind) in
+  let binder = (Anonymous, (Typeops.relevance_of_sorts_family kind, false)) in
   it_mkLambda_or_LetIn_name env
     (mkLambda_string "P" typP
-       (add_branch (push_rel (var_decl_of_name Anonymous typP) env') 0)) lnamespar
+       (add_branch (push_rel (var_decl_of binder typP) env') 0)) lnamespar
 
 (* check if the type depends recursively on one of the inductive scheme *)
 
@@ -268,7 +273,7 @@ let context_chop k ctx =
 (* Main function *)
 let mis_make_indrec env sigma listdepkind mib =
   let nparams = mib.mind_nparams in
-  let nparrec = mib. mind_nparams_rec in
+  let nparrec = mib.mind_nparams_rec in
   let lnonparrec,lnamesparrec =
     context_chop (nparams-nparrec) mib.mind_params_ctxt in
   let nrec = List.length listdepkind in
@@ -302,9 +307,10 @@ let mis_make_indrec env sigma listdepkind mib =
 	    let args = Termops.extended_rel_list (nrec+nbconstruct) lnamesparrec in
 	    let indf = make_ind_family(indi,args) in
 
-	    let arsign,_ = get_arity env indf in
+	    let arsign,sf = get_arity env indf in
 	    let depind = build_dependent_inductive env indf in
-	    let deparsign = (var_decl_of_name Anonymous depind)::arsign in
+	    let binder = (Anonymous, (Typeops.relevance_of_sorts_family sf, false)) in
+	    let deparsign = (var_decl_of binder depind)::arsign in
 
 	    let nonrecpar = rel_context_length lnonparrec in
 	    let larsign = rel_context_length deparsign in
@@ -338,8 +344,10 @@ let mis_make_indrec env sigma listdepkind mib =
 	    (* Predicate in the context of the case *)
 
 	    let depind' = build_dependent_inductive env indf' in
-	    let arsign',_ = get_arity env indf' in
-	    let deparsign' = (var_decl_of_name Anonymous depind')::arsign' in
+	    let arsign',sf = get_arity env indf' in
+	    let binder = (Anonymous, (Typeops.relevance_of_sorts_family sf, false)) in
+	    let decl = var_decl_of binder depind' in
+	    let deparsign' = decl::arsign' in
 
 	    let pargs =
 	      let nrpar = Termops.extended_rel_list (2*ndepar) lnonparrec
@@ -355,8 +363,9 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let concl = applist (mkRel (dect+j+ndepar),pargs) in
 	      let pred =
 		it_mkLambda_or_LetIn_name env
-		  ((if dep then mkLambda_name env else mkLambda)
-		      (Anonymous,depind',concl))
+		  ((if dep then it_mkLambda_or_LetIn_name env else it_mkLambda_or_LetIn)
+		     concl
+		     [decl])
 		  arsign'
 	      in
 		it_mkLambda_or_LetIn_name env
@@ -414,8 +423,9 @@ let mis_make_indrec env sigma listdepkind mib =
       | (indi,_,_,dep,kinds)::rest ->
 	  let indf = make_ind_family (indi, Termops.extended_rel_list i lnamesparrec) in
 	  let typP = make_arity env dep indf (Termops.new_sort_in_family kinds) in
+	  let binder = (Anonymous, (Typeops.relevance_of_sorts_family kinds, false)) in
 	    mkLambda_string "P" typP
-	      (put_arity (push_rel (var_decl_of_name Anonymous typP) env) (i+1) rest)
+	      (put_arity (push_rel (var_decl_of binder typP) env) (i+1) rest)
       | [] ->
 	  make_branch env 0 listdepkind
     in

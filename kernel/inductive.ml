@@ -180,12 +180,8 @@ let instantiate_universes env ctx ar argsorts =
 
 exception SingletonInductiveBecomesProp of identifier
 
-let body_of = function
-  | Variable _ -> None
-  | Definition (_, c) -> Some c
-
 let bodies_of_ctx ctx = 
-  Sign.fold_rel_context (fun (na, b, t) acc -> body_of b :: acc) ctx ~init:[]
+  Sign.fold_rel_context (fun (na, b, t) acc -> constr_of_body b :: acc) ctx ~init:[]
 
 let type_of_inductive_knowing_parameters ?(polyprop=true) env mip paramtyps =
   match mip.mind_arity with
@@ -654,7 +650,7 @@ let check_one_fix renv recpos def =
     (* if [t] does not make recursive calls, it is guarded: *)
     if noccur_with_meta renv.rel_min nfi t then ()
     else
-      let (f,l) = decompose_app (whd_betaiotazeta t) in
+      let (f,l) = Term.decompose_app (whd_betaiotazeta t) in
       match kind_of_term f with
         | Rel p ->
             (* Test if [p] is a fixpoint (recursive call) *)
@@ -862,7 +858,7 @@ let rec codomain_is_coind env c =
 let check_one_cofix env nbfix def deftype =
   let rec check_rec_call env alreadygrd n vlra  t =
     if not (noccur_with_meta n nbfix t) then
-      let c,args = decompose_app (whd_betadeltaiota env t) in
+      let c,args = Term.decompose_app (whd_betadeltaiota env t) in
       match kind_of_term c with
 	| Rel p when  n <= p && p < n+nbfix ->
 	    (* recursive call: must be guarded and no nested recursive

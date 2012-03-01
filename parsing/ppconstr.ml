@@ -236,7 +236,7 @@ let pr_binder many pr (nal,k,t) =
 	  hov 1 (str "`" ++ (surround_impl b'
 			       (pr_lident (loc,id) ++ str " : " ++
 				  (if t' then str "!" else mt()) ++ pr t)))
-	|_ -> anomaly "List of generalized binders have alwais one element."
+	|_ -> anomaly "List of generalized binders have always one element."
       end
     | Default b ->
       match t with

@@ -36,12 +36,12 @@ let interp_evars evdref env impls k typ =
 let interp_fields_evars evars env impls_env nots l =
   List.fold_left2
     (fun (env, uimpls, params, impls) no ((loc, i), b, t) ->
-      let impl, t' = interp_evars evars env impls Pretyping.IsType t in
+      let impl, (t', rel) = interp_evars evars env impls Pretyping.IsType t in
       let b' = 
 	Option.cata 
 	  (fun x -> 
-	     let _, x' = interp_evars evars env impls (Pretyping.OfType (Some t')) x in
-	       definition_body x') variable_body b in
+	     let _, (x', rel') = interp_evars evars env impls (Pretyping.OfType (Some t')) x in
+	       Term.Definition (rel, x')) (Term.Variable (rel, false)) b in
       let impls =
 	match i with
 	| Anonymous -> impls

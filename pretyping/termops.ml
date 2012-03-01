@@ -1145,4 +1145,4 @@ let coq_unit_judge =
     | None ->
 	(* In case the constants id/ID are not defined *)
 	make_judge (Term.mkLambda (na1,mkProp,Term.mkLambda(na2,mkRel 1,mkRel 1)))
-                 (Term.mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2)))
+                 (Term.mkProd (na1,mkProp,mkArrow Irr (mkRel 1) (mkRel 2)))

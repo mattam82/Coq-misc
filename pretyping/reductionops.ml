@@ -967,7 +967,7 @@ let head_unfold_under_prod ts env _ c =
     match kind_of_term c with
       | Prod (n,t,c) -> mkProd (n,aux t, aux c)
       | _ ->
-	  let (h,l) = decompose_app c in
+	  let (h,l) = Term.decompose_app c in
 	  match kind_of_term h with
 	    | Const cst -> beta_applist (unfold cst,l)
 	    | _ -> c in

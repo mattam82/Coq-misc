@@ -42,6 +42,10 @@ let relevance_of_sort = function
   | Prop Null -> Irr
   | _ -> Expl
 
+let relevance_of_sorts_family = function
+  | InProp -> Irr
+  | _ -> Expl
+
 (* This should be a type intended to be assumed. The error message is *)
 (* not as useful as for [type_judgment]. *)
 let assumption_of_judgment env j =
@@ -142,7 +146,7 @@ let extract_context_levels env =
 let make_polymorphic_if_constant_for_ind env {uj_val = c; uj_type = t} =
   let params, ccl = dest_prod_assum env t in
   match kind_of_term ccl with
-  | Sort (Type u) when isInd (fst (decompose_app (whd_betadeltaiota env c))) ->
+  | Sort (Type u) when isInd (fst (Term.decompose_app (whd_betadeltaiota env c))) ->
       let param_ccls = extract_context_levels env params in
       let s = { poly_param_levels = param_ccls; poly_level = u} in
       PolymorphicArity (params,s)

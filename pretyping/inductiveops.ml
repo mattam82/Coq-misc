@@ -251,7 +251,7 @@ let build_dependent_constructor cs =
       @(extended_rel_list 0 cs.cs_args))
 
 let build_dependent_inductive env ((ind, params) as indf) =
-  let arsign,_ = get_arity env indf in
+  let arsign,sf = get_arity env indf in
   let nrealargs = List.length arsign in
   applist
     (mkInd ind,
@@ -260,11 +260,12 @@ let build_dependent_inductive env ((ind, params) as indf) =
 (* builds the arity of an elimination predicate in sort [s] *)
 
 let make_arity_signature env dep indf =
-  let (arsign,_) = get_arity env indf in
+  let (arsign,sf) = get_arity env indf in
   if dep then
     (* We need names everywhere *)
-    name_context env
-      ((Anonymous,variable_body,build_dependent_inductive env indf)::arsign)
+    let ty = build_dependent_inductive env indf in
+      name_context env
+	((var_decl_of (Anonymous,(Typeops.relevance_of_sorts_family sf, false)) ty)::arsign)
       (* Costly: would be better to name once for all at definition time *)
   else
     (* No need to enforce names *)
@@ -394,10 +395,13 @@ let type_case_branches_with_names env indspec p c =
 
 (* Type of Case predicates *)
 let arity_of_case_predicate env (ind,params) dep k =
-  let arsign,_ = get_arity env (ind,params) in
+  let arsign,sf = get_arity env (ind,params) in
   let mind = build_dependent_inductive env (ind,params) in
-  let concl = if dep then mkArrow mind (mkSort k) else mkSort k in
-  it_mkProd_or_LetIn concl arsign
+  let concl = 
+    if dep then 
+      Constr.mkArrow (Typeops.relevance_of_sorts_family sf) mind (mkSort k) 
+    else mkSort k 
+  in it_mkProd_or_LetIn concl arsign
 
 (***********************************************)
 (* Inferring the sort of parameters of a polymorphic inductive type

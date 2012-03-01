@@ -30,6 +30,8 @@ val infer_local_decls :
 
 val relevance_of_sort : sorts -> relevance
 
+val relevance_of_sorts_family : sorts_family -> relevance
+
 (** [relevance_of_type t] First infers the sort of [t] and returns its relevance *)
 val relevance_of_type : env -> types -> relevance
 

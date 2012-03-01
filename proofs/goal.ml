@@ -219,7 +219,7 @@ module Refinable = struct
     let tycon = Pretyping.OfType (Option.init check_type (Evd.evar_concl info)) in
     (* call to [understand_tcc_evars] returns a constr with undefined evars
        these evars will be our new goals *)
-    let open_constr = 
+    let open_constr, _ = 
       Pretyping.Default.understand_tcc_evars ~resolve_classes rdefs env tycon rawc
     in
       ignore(update_handle handle init_defs !rdefs);

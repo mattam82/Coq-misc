@@ -41,6 +41,11 @@ where "A /\ B" := (and A B) : type_scope.
 Section Conjunction.
 
   Variables A B : Prop.
+  
+  Definition proj1 (p : A /\ B) : A :=
+    match p with
+      | conj a b => a
+    end.
 
   Theorem proj1 : A /\ B -> A.
   Proof.

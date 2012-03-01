@@ -70,6 +70,8 @@ type implicit = bool
 type 'a binder_annot = 'a * (relevance * implicit)
 type 'a letbinder_annot = 'a * relevance
 type app_annot = relevance * relevance array
+type app_annot_list = relevance * relevance list
+type 'a annot = relevance * 'a
 
 (** {5 Functions for dealing with constr terms. }
   The following functions are intended to simplify and to uniform the
@@ -224,15 +226,18 @@ module Constr : sig
   val kind_of_term : constr -> (constr, types) kind_of_term
 
   val mkProd : name binder_annot * types * types -> types
+  val mkArrow : relevance -> types -> types -> types
   val mkLetIn : name letbinder_annot * constr * types * constr -> constr
   val mkLambda : name binder_annot * types * constr -> constr
-  val mkApp : constr * (relevance * relevance array) * constr array -> constr
+  val mkApp : constr * app_annot * constr array -> constr
 
   val destProd : types -> name binder_annot * types * types
   val destLambda : constr -> name binder_annot * types * constr
   val destLetIn : constr -> name letbinder_annot * types * constr * constr
   val destApp : constr -> constr * app_annot * constr array
 
+  val decompose_app : constr -> constr annot * constr annot list
+  val recompose_app : constr annot -> constr annot list -> constr
 end
 
 type ('constr, 'types) kind_of_term =

@@ -80,6 +80,8 @@ type implicit = bool
 type 'a binder_annot = 'a * (relevance * implicit)
 type 'a letbinder_annot = 'a * relevance
 type app_annot = relevance * relevance array
+type app_annot_list = relevance * relevance list
+type 'a annot = relevance * 'a
 
 (* [constr array] is an instance matching definitional [named_context] in
    the same order (i.e. last argument first) *)
@@ -135,6 +137,7 @@ module Constr = struct
   (* We ensure applicative terms have at least one argument and the
      function is not itself an applicative term *)
   let mkProd (annot,typ,c) = Prod (annot,typ,c)
+  let mkArrow rel t1 t2 = Prod ((Anonymous, (rel, false)), t1, t2)
   let mkLambda (x,t1,t2) = Lambda (x,t1,t2)
   let mkLetIn (x,ct,t,c2) = LetIn (x,ct,t,c2)
   let mkApp (f, (r, ra), a) =
@@ -159,6 +162,16 @@ module Constr = struct
   let destApp = function
     | App (f,ann,args) -> (f, ann, args)
     | _ -> invalid_arg "destApp"
+
+  let decompose_app = function
+    | App (f,(a,ans),args) -> 
+	let args = array_fold_right2 (fun a arg acc -> (a, arg) :: acc) ans args [] in
+	  ((a, f), args)
+    | _ -> invalid_arg "decompose_app"
+	
+  let recompose_app (a, f) anargs = 
+    let ans, args = List.split anargs in
+      App (f, (a, Array.of_list ans), Array.of_list args)
 
   let kind_of_term c = c
 
