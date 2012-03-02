@@ -109,6 +109,11 @@ let named_hd env a = function
 let mkProd_name   env (n,a,b) = mkProd (named_hd env a n, a, b)
 let mkLambda_name env (n,a,b) = mkLambda (named_hd env a n, a, b)
 
+let mkProd_name_annot   env (n,a,b) = 
+  Constr.mkProd (map_binder (named_hd env a) n, a, b)
+let mkLambda_name_annot env (n,a,b) = 
+  Constr.mkLambda (map_binder (named_hd env a) n, a, b)
+
 let lambda_name = mkLambda_name
 let prod_name = mkProd_name
 

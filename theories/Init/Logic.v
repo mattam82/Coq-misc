@@ -41,11 +41,6 @@ where "A /\ B" := (and A B) : type_scope.
 Section Conjunction.
 
   Variables A B : Prop.
-  
-  Definition proj1 (p : A /\ B) : A :=
-    match p with
-      | conj a b => a
-    end.
 
   Theorem proj1 : A /\ B -> A.
   Proof.
@@ -78,16 +73,17 @@ Notation "A <-> B" := (iff A B) : type_scope.
 
 Section Equivalence.
 
-Theorem iff_refl : forall A:Prop, A <-> A.
+Theorem iff_refl : forall A, A <-> A.
   Proof.
     split; auto.
+Show Proof.
   Qed.
+
 
 Theorem iff_trans : forall A B C:Prop, (A <-> B) -> (B <-> C) -> (A <-> C).
   Proof.
     intros A B C [H1 H2] [H3 H4]; split; auto.
   Qed.
-
 Theorem iff_sym : forall A B:Prop, (A <-> B) -> (B <-> A).
   Proof.
     intros A B [H1 H2]; split; auto.

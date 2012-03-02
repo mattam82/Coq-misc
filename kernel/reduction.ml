@@ -54,11 +54,11 @@ let compare_stack_shape stk1 stk2 =
       ([],[]) -> bal=0
     | ((Zupdate _|Zshift _)::s1, _) -> compare_rec bal s1 stk2
     | (_, (Zupdate _|Zshift _)::s2) -> compare_rec bal stk1 s2
-    | (Zapp l1::s1, _) -> compare_rec (bal+Array.length l1) s1 stk2
-    | (_, Zapp l2::s2) -> compare_rec (bal-Array.length l2) stk1 s2
+    | (Zapp (_,l1)::s1, _) -> compare_rec (bal+Array.length l1) s1 stk2
+    | (_, Zapp (_,l2)::s2) -> compare_rec (bal-Array.length l2) stk1 s2
     | (Zcase(c1,_,_)::s1, Zcase(c2,_,_)::s2) ->
         bal=0 (* && c1.ci_ind  = c2.ci_ind *) && compare_rec 0 s1 s2
-    | (Zfix(_,a1)::s1, Zfix(_,a2)::s2) ->
+    | (Zfix(_,_,a1)::s1, Zfix(_,_,a2)::s2) ->
         bal=0 && compare_rec 0 a1 a2 && compare_rec 0 s1 s2
     | (_,_) -> false in
   compare_rec 0 stk1 stk2
@@ -81,9 +81,9 @@ let pure_stack lfts stk =
           (match (zi,pure_rec lfts s) with
               (Zupdate _,lpstk)  -> lpstk
             | (Zshift n,(l,pstk)) -> (el_shft n l, pstk)
-            | (Zapp a, (l,pstk)) ->
+            | (Zapp (_,a), (l,pstk)) ->
                 (l,zlapp (Array.map (fun t -> (l,t)) a) pstk)
-            | (Zfix(fx,a),(l,pstk)) ->
+            | (Zfix(fx,_,a),(l,pstk)) ->
                 let (lfx,pa) = pure_rec l a in
                 (l, Zlfix((lfx,fx),pa)::pstk)
             | (Zcase(ci,p,br),(l,pstk)) ->
@@ -205,7 +205,7 @@ let rec no_arg_available = function
   | [] -> true
   | Zupdate _ :: stk -> no_arg_available stk
   | Zshift _ :: stk -> no_arg_available stk
-  | Zapp v :: stk -> Array.length v = 0 && no_arg_available stk
+  | Zapp (_,v) :: stk -> Array.length v = 0 && no_arg_available stk
   | Zcase _ :: _ -> true
   | Zfix _ :: _ -> true
 
@@ -213,7 +213,7 @@ let rec no_nth_arg_available n = function
   | [] -> true
   | Zupdate _ :: stk -> no_nth_arg_available n stk
   | Zshift _ :: stk -> no_nth_arg_available n stk
-  | Zapp v :: stk ->
+  | Zapp (_,v) :: stk ->
       let k = Array.length v in
       if n >= k then no_nth_arg_available (n-k) stk
       else false
@@ -331,15 +331,15 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
     | (FLambda _, _) ->
         if v1 <> [] then
 	  anomaly "conversion was given unreduced term (FLambda)";
-        let (_,_ty1,bd1) = destFLambda mk_clos hd1 in
+        let ((na, (ann, _)),_ty1,bd1) = destFLambda mk_clos hd1 in
 	eqappr CONV l2r infos
-	  (el_lift lft1, (bd1, [])) (el_lift lft2, (hd2, eta_expand_stack v2)) cuniv
+	  (el_lift lft1, (bd1, [])) (el_lift lft2, (hd2, eta_expand_stack ann v2)) cuniv
     | (_, FLambda _) ->
         if v2 <> [] then
 	  anomaly "conversion was given unreduced term (FLambda)";
-        let (_,_ty2,bd2) = destFLambda mk_clos hd2 in
+        let ((_,(ann,_)),_ty2,bd2) = destFLambda mk_clos hd2 in
 	eqappr CONV l2r infos
-	  (el_lift lft1, (hd1, eta_expand_stack v1)) (el_lift lft2, (bd2, [])) cuniv
+	  (el_lift lft1, (hd1, eta_expand_stack ann v1)) (el_lift lft2, (bd2, [])) cuniv
 
     (* only one constant, defined var or defined rel *)
     | (FFlex fl1, _)      ->

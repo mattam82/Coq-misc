@@ -104,13 +104,13 @@ type fterm =
   | FFlex of table_key
   | FInd of inductive
   | FConstruct of constructor
-  | FApp of fconstr * fconstr array
+  | FApp of fconstr * (app_annot * fconstr array)
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCases of case_info * fconstr * fconstr * fconstr array
-  | FLambda of int * (name * constr) list * constr * fconstr subs
-  | FProd of name * fconstr * fconstr
-  | FLetIn of name * fconstr * fconstr * constr * fconstr subs
+  | FLambda of int * (name binder_annot * constr) list * constr * fconstr subs
+  | FProd of name binder_annot * fconstr * fconstr
+  | FLetIn of name letbinder_annot * fconstr * fconstr * constr * fconstr subs
   | FEvar of existential * fconstr subs
   | FLIFT of int * fconstr
   | FCLOS of constr * fconstr subs
@@ -122,16 +122,16 @@ type fterm =
    one by one *)
 
 type stack_member =
-  | Zapp of fconstr array
+  | Zapp of app_annot * fconstr array
   | Zcase of case_info * fconstr * fconstr array
-  | Zfix of fconstr * stack
+  | Zfix of fconstr * relevance * stack
   | Zshift of int
   | Zupdate of fconstr
 
 and stack = stack_member list
 
 val empty_stack : stack
-val append_stack : fconstr array -> stack -> stack
+val append_stack : app_annot * fconstr array -> stack -> stack
 
 val decomp_stack : stack -> (fconstr * stack) option
 val array_of_stack : stack -> fconstr array
@@ -140,7 +140,7 @@ val stack_args_size : stack -> int
 val stack_tail : int -> stack -> stack
 val stack_nth : stack -> int -> fconstr
 val zip_term : (fconstr -> constr) -> constr -> stack -> constr
-val eta_expand_stack : stack -> stack
+val eta_expand_stack : relevance -> stack -> stack
 
 (** To lazy reduce a constr, create a [clos_infos] with
    [create_clos_infos], inject the term to reduce with [inject]; then use
@@ -154,7 +154,7 @@ val mk_atom : constr -> fconstr
 val fterm_of : fconstr -> fterm
 val term_of_fconstr : fconstr -> constr
 val destFLambda :
-  (fconstr subs -> constr -> fconstr) -> fconstr -> name * fconstr * fconstr
+  (fconstr subs -> constr -> fconstr) -> fconstr -> name binder_annot * fconstr * fconstr
 
 (** Global and local constant cache *)
 type clos_infos

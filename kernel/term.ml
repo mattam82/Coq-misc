@@ -173,6 +173,53 @@ module Constr = struct
     let ans, args = List.split anargs in
       App (f, (a, Array.of_list ans), Array.of_list args)
 
+  (* Transforms a product term (x1:T1)..(xn:Tn)T into the pair
+     ([(xn,Tn);...;(x1,T1)],T), where T is not a product *)
+  let decompose_prod =
+    let rec prodec_rec l c = match c with
+      | Prod (x,t,c) -> prodec_rec ((x,t)::l) c
+      | Cast (c,_,_)   -> prodec_rec l c
+      | _              -> l,c
+    in
+      prodec_rec []
+
+  type constr = (constr,constr) kind_of_term
+
+  (* Transforms a lambda term [x1:T1]..[xn:Tn]T into the pair
+     ([(xn,Tn);...;(x1,T1)],T), where T is not a lambda *)
+  let decompose_lam (b : constr) : (name binder_annot * constr) list * constr =
+    let rec lamdec_rec l c = match c with
+      | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) c
+      | Cast (c,_,_)     -> lamdec_rec l c
+      | _                -> l,c
+    in
+      lamdec_rec [] b
+
+
+  (* prodn n [xn:Tn;..;x1:T1;Gamma] b = (x1:T1)..(xn:Tn)b *)
+  let prodn n env b =
+    let rec prodrec = function
+      | (0, env, b)        -> b
+      | (n, ((v,t)::l), b) -> prodrec (n-1,  l, mkProd (v,t,b))
+      | _ -> assert false
+    in
+      prodrec (n,env,b)
+
+  (* compose_prod [xn:Tn;..;x1:T1] b = (x1:T1)..(xn:Tn)b *)
+  let compose_prod l b = prodn (List.length l) l b
+
+  (* lamn n [xn:Tn;..;x1:T1;Gamma] b = [x1:T1]..[xn:Tn]b *)
+  let lamn n env b =
+    let rec lamrec = function
+      | (0, env, b)        -> b
+      | (n, ((v,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,t,b))
+      | _ -> assert false
+    in
+      lamrec (n,env,b)
+
+  (* compose_lam [xn:Tn;..;x1:T1] b = [x1:T1]..[xn:Tn]b *)
+  let compose_lam l b = lamn (List.length l) l b
+
   let kind_of_term c = c
 
 end

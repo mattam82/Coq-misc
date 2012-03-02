@@ -28,6 +28,7 @@ open Type_errors
 open Safe_typing
 open Nametab
 open Sign
+open Constr
 
 type dep_flag = bool
 
@@ -38,8 +39,8 @@ type recursion_scheme_error =
 
 exception RecursionSchemeError of recursion_scheme_error
 
-let make_prod_dep dep env = if dep then mkProd_name env else mkProd
-let mkLambda_string s t c = mkLambda (Name (id_of_string s), t, c)
+let make_prod_dep dep env = if dep then mkProd_name_annot env else mkProd
+let mkLambda_string s an t c = mkLambda ((Name (id_of_string s), an), t, c)
 
 (*******************************************)
 (* Building curryfied elimination          *)
@@ -69,7 +70,8 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
   let indf = make_ind_family(ind, Termops.extended_rel_list 0 lnamespar) in
   let constrs = get_constructors env indf in
   let _, sf = get_arity env' indf in
-  let binder = (Anonymous, (Typeops.relevance_of_sorts_family sf, false)) in
+  let an = (Typeops.relevance_of_sorts_family sf, false) in
+  let binder = (Anonymous, an) in
 
   let rec add_branch env k =
     if k = Array.length mip.mind_consnames then
@@ -102,13 +104,16 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
     else
       let cs = lift_constructor (k+1) constrs.(k) in
       let t = build_branch_type env dep (mkRel (k+1)) cs in
-      mkLambda_string "f" t
+      let ann = (Typeops.relevance_of_sorts_family kind, false) in
+      let binder = Anonymous, ann in
+      mkLambda_string "f" ann t
 	(add_branch (push_rel (var_decl_of binder t) env) (k+1))
   in
   let typP = make_arity env' dep indf (Termops.new_sort_in_family kind) in
-  let binder = (Anonymous, (Typeops.relevance_of_sorts_family kind, false)) in
+  let an = (Expl, false) in
+  let binder = (Anonymous, an) in
   it_mkLambda_or_LetIn_name env
-    (mkLambda_string "P" typP
+    (mkLambda_string "P" an typP
        (add_branch (push_rel (var_decl_of binder typP) env') 0)) lnamespar
 
 (* check if the type depends recursively on one of the inductive scheme *)
@@ -136,10 +141,10 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
       let p',largs = whd_betadeltaiota_nolet_stack env sigma p in
       match kind_of_term p' with
 	| Prod (n,t,c) ->
-	    let d = var_decl_of_name n t in
+	    let d = var_decl_of n t in
 	    make_prod env (n,t,prec (push_rel d env) (i+1) (d::sign) c)
 	| LetIn (n,b,t,c) ->
-	    let d = def_decl_of_name n b t in
+	    let d = def_decl_of n b t in
 	    mkLetIn (n,b,t,prec (push_rel d env) (i+1) (d::sign) c)
      	| Ind (_,_) ->
 	    let realargs = list_skipn nparams largs in
@@ -171,22 +176,22 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
 	     | None ->
 		 make_prod env
 		   (n,t,
-		    process_constr (push_rel (var_decl_of_name n t) env) (i+1) c_0 rest
+		    process_constr (push_rel (var_decl_of n t) env) (i+1) c_0 rest
 		      (nhyps-1) (i::li))
              | Some(dep',p) ->
 		 let nP = lift (i+1+decP) p in
-                 let env' = push_rel (var_decl_of_name n t) env in
+                 let env' = push_rel (var_decl_of n t) env in
 		 let t_0 = process_pos env' dep' nP (lift 1 t) in
 		 make_prod_dep (dep or dep') env
                    (n,t,
-		    mkArrow t_0
+		    mkArrow (relevance_of n) t_0
 		      (process_constr
-			(push_rel (var_decl_of_name Anonymous t_0) env')
+			(push_rel (var_decl_of (Anonymous, (relevance_of n, false)) t_0) env')
 			 (i+2) (lift 1 c_0) rest (nhyps-1) (i::li))))
       | LetIn (n,b,t,c_0) ->
 	  mkLetIn (n,b,t,
 		   process_constr
-		     (push_rel (def_decl_of_name n b t) env)
+		     (push_rel (def_decl_of n b t) env)
 		     (i+1) c_0 recargs (nhyps-1) li)
       | _ -> assert false
     else
@@ -211,10 +216,10 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
       let p',largs = whd_betadeltaiota_nolet_stack env sigma p in
       match kind_of_term p' with
 	| Prod (n,t,c) ->
-	    let d = var_decl_of_name n t in
-	    mkLambda_name env (n,t,prec (push_rel d env) (i+1) (d::hyps) c)
+	    let d = var_decl_of n t in
+	    mkLambda_name_annot env (n,t,prec (push_rel d env) (i+1) (d::hyps) c)
 	| LetIn (n,b,t,c) ->
-	    let d = def_decl_of_name n b t in
+	    let d = def_decl_of n b t in
 	    mkLetIn (n,b,t,prec (push_rel d env) (i+1) (d::hyps) c)
      	| Ind _ ->
             let realargs = list_skipn nparrec largs
@@ -249,7 +254,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
 		    (cprest,rest)))
     | (n,Definition (ann,c),t as d)::cprest, rest ->
 	mkLetIn
-	  (n,c,t,
+	  ((n,ann),c,t,
 	   process_constr (push_rel d env) (i+1) (lift 1 f)
 	     (cprest,rest))
     | [],[] -> f
@@ -398,7 +403,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	mrec 0 [] [] []
     in
     let rec make_branch env i = function
-      | (indi,mibi,mipi,dep,_)::rest ->
+      | (indi,mibi,mipi,dep,kinds)::rest ->
           let tyi = snd indi in
 	  let nconstr = Array.length mipi.mind_consnames in
 	  let rec onerec env j =
@@ -413,8 +418,10 @@ let mis_make_indrec env sigma listdepkind mib =
 		type_rec_branch
                   true dep env sigma (vargs,depPvec,i+j) tyi cs recarg
 	      in
-		mkLambda_string "f" p_0
-		  (onerec (push_rel (var_decl_of_name Anonymous p_0) env) (j+1))
+	      let ann = (Typeops.relevance_of_sorts_family kinds, false) in
+	      let binder = Anonymous, ann in
+		mkLambda_string "f" ann p_0
+		  (onerec (push_rel (var_decl_of (Anonymous, ann) p_0) env) (j+1))
 	  in onerec env 0
       | [] ->
 	  makefix i listdepkind
@@ -423,8 +430,9 @@ let mis_make_indrec env sigma listdepkind mib =
       | (indi,_,_,dep,kinds)::rest ->
 	  let indf = make_ind_family (indi, Termops.extended_rel_list i lnamesparrec) in
 	  let typP = make_arity env dep indf (Termops.new_sort_in_family kinds) in
-	  let binder = (Anonymous, (Typeops.relevance_of_sorts_family kinds, false)) in
-	    mkLambda_string "P" typP
+	  let ann = Expl, false in
+	  let binder = (Anonymous, ann) in
+	    mkLambda_string "P" ann typP
 	      (put_arity (push_rel (var_decl_of binder typP) env) (i+1) rest)
       | [] ->
 	  make_branch env 0 listdepkind
@@ -496,7 +504,7 @@ let weaken_sort_scheme sort npars term =
 	  if np = 0 then
             let t' = change_sort_arity sort t in
             mkProd (n, t', c),
-            mkLambda (n, t', mkApp(term,Termops.rel_vect 0 (npars+1)))
+            mkLambda (n, t', Term.mkApp(term,Termops.rel_vect 0 (npars+1)))
 	  else
             let c',term' = drec (np-1) c in
 	    mkProd (n, t, c'), mkLambda (n, t, term')

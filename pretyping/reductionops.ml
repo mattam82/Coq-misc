@@ -19,6 +19,8 @@ open Closure
 open Esubst
 open Reduction
 
+open Constr
+
 exception Elimconst
 
 
@@ -26,7 +28,7 @@ exception Elimconst
 (* The type of (machine) stacks (= lambda-bar-calculus' contexts)     *)
 
 type 'a stack_member =
-  | Zapp of 'a list
+  | Zapp of relevance * 'a annot list
   | Zcase of case_info * 'a * 'a array
   | Zfix of 'a * 'a stack
   | Zshift of int
@@ -35,61 +37,62 @@ type 'a stack_member =
 and 'a stack = 'a stack_member list
 
 let empty_stack = []
-let append_stack_list l s =
+let append_stack_list an l s =
   match (l,s) with
   | ([],s) -> s
-  | (l1, Zapp l :: s) -> Zapp (l1@l) :: s
-  | (l1, s) -> Zapp l1 :: s
-let append_stack v s = append_stack_list (Array.to_list v) s
+  | (l1, Zapp (an, l) :: s) -> Zapp (an, (l1@l)) :: s
+  | (l1, s) -> Zapp (an, l1) :: s
+let append_stack (an, ans) v s = 
+  append_stack_list an (array_fold_right2 (fun an v acc -> (an,v) :: acc) ans v []) s
 
 let rec stack_args_size = function
-  | Zapp l::s -> List.length l + stack_args_size s
+  | Zapp (an,l)::s -> List.length l + stack_args_size s
   | Zshift(_)::s -> stack_args_size s
   | Zupdate(_)::s -> stack_args_size s
   | _ -> 0
 
 (* When used as an argument stack (only Zapp can appear) *)
 let rec decomp_stack = function
-  | Zapp[v]::s -> Some (v, s)
-  | Zapp(v::l)::s -> Some (v, (Zapp l :: s))
-  | Zapp [] :: s -> decomp_stack s
+  | Zapp(_,[v])::s -> Some (v, s)
+  | Zapp(a,v::l)::s -> Some (v, (Zapp (a,l) :: s))
+  | Zapp(_,[]) :: s -> decomp_stack s
   | _ -> None
 let array_of_stack s =
   let rec stackrec = function
   | [] -> []
-  | Zapp args :: s -> args :: (stackrec s)
+  | Zapp (_,args) :: s -> args :: (stackrec s)
   | _ -> assert false
   in Array.of_list (List.concat (stackrec s))
 let rec list_of_stack = function
   | [] -> []
-  | Zapp args :: s -> args @ (list_of_stack s)
+  | Zapp (_,args) :: s -> args @ (list_of_stack s)
   | _ -> assert false
 let rec app_stack = function
   | f, [] -> f
-  | f, (Zapp [] :: s) -> app_stack (f, s)
-  | f, (Zapp args :: s) ->
-      app_stack (applist (f, args), s)
+  | f, (Zapp (_,[]) :: s) -> app_stack (f, s)
+  | f, (Zapp (an,args) :: s) ->
+      app_stack (recompose_app (an,f) args, s)
   | _ -> assert false
 let rec stack_assign s p c = match s with
-  | Zapp args :: s ->
+  | Zapp (an,args) :: s ->
       let q = List.length args in
       if p >= q then
-	Zapp args :: stack_assign s (p-q) c
+	Zapp (an,args) :: stack_assign s (p-q) c
       else
         (match list_chop p args with
-            (bef, _::aft) -> Zapp (bef@c::aft) :: s
+            (bef, _::aft) -> Zapp (an, bef@c::aft) :: s
           | _ -> assert false)
   | _ -> s
 let rec stack_tail p s =
   if p = 0 then s else
     match s with
-      | Zapp args :: s ->
+      | Zapp (an,args) :: s ->
 	  let q = List.length args in
 	  if p >= q then stack_tail (p-q) s
-	  else Zapp (list_skipn p args) :: s
+	  else Zapp (an,list_skipn p args) :: s
       | _ -> failwith "stack_tail"
 let rec stack_nth s p = match s with
-  | Zapp args :: s ->
+  | Zapp (an,args) :: s ->
       let q = List.length args in
       if p >= q then stack_nth s (p-q)
       else List.nth args p
@@ -124,7 +127,7 @@ let safe_evar_value sigma ev =
 
 let rec whd_app_state sigma (x, stack as s) =
   match kind_of_term x with
-    | App (f,cl) -> whd_app_state sigma (f, append_stack cl stack)
+    | App (f,an,cl) -> whd_app_state sigma (f, append_stack an cl stack)
     | Cast (c,_,_)  -> whd_app_state sigma (c, stack)
     | Evar ev ->
         (match safe_evar_value sigma ev with
@@ -221,7 +224,7 @@ let betalet = mkflags [fbeta;fzeta]
 let rec stacklam recfun env t stack =
   match (decomp_stack stack,kind_of_term t) with
     | Some (h,stacktl), Lambda (_,_,c) -> stacklam recfun (h::env) c stacktl
-    | _ -> recfun (substl env t, stack)
+    | _ -> recfun (substl (List.map snd env) t, stack)
 
 let beta_applist (c,l) =
   stacklam app_stack [] c (append_stack_list l empty_stack)

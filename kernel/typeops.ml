@@ -218,7 +218,7 @@ let judge_of_apply env funj funjty (rel,rels) argjv =
         (match kind_of_term red with
           | Prod ((na,(irr',_)),c1,c2) ->
 	    if irr' <> irr then 
-	      error_relevance_mismatch env red irr irr'
+	      error_relevance_mismatch env red irr' irr
 	    else
 	      (try
 		let c = conv_leq false env hj.uj_type c1 in
@@ -389,13 +389,13 @@ let var_decl_of env (na, (irr, impl) as decl) {utj_val = ty; utj_type = s} =
   let irr' = relevance_of_sort s in
   if irr = irr' then (* Well-sorted and tagged *)
     var_decl_of decl ty
-  else error_relevance_mismatch env ty irr irr'
+  else error_relevance_mismatch env ty irr' irr
 
 let def_decl_of env (na, irr as decl) t {utj_val = ty; utj_type = s} =
   let irr' = relevance_of_sort s in
   if irr = irr' then (* Well-sorted and tagged *)
     def_decl_of decl t ty
-  else error_relevance_mismatch env ty irr irr'
+  else error_relevance_mismatch env ty irr' irr
 
 (* the typing machine. *)
     (* ATTENTION : faudra faire le typage du contexte des Const,

@@ -177,3 +177,5 @@ let get_assumption_of env evc c = c
 (* Makes an unsafe judgment from a constr *)
 let get_judgment_of env evc c = { uj_val = c; uj_type = get_type_of env evc c }
 
+let get_relevance_of ?(polyprop=true) env sigma t =
+  Typeops.relevance_of_sorts_family (get_sort_family_of ~polyprop env sigma t)

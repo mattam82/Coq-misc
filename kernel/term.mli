@@ -238,6 +238,16 @@ module Constr : sig
 
   val decompose_app : constr -> constr annot * constr annot list
   val recompose_app : constr annot -> constr annot list -> constr
+    
+  val decompose_prod : constr -> (name binder_annot * constr) list * constr
+  val decompose_lam : constr -> (name binder_annot * constr) list * constr
+
+  (** [compose_lam l b]
+      @return [fun (x_1:T_1)...(x_n:T_n) => b]
+      where [l] is [(x_n,T_n)...(x_1,T_1)].
+      Inverse of [it_destLam] *)
+  val compose_lam : (name binder_annot * constr) list -> constr -> constr
+
 end
 
 type ('constr, 'types) kind_of_term =
