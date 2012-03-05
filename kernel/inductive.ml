@@ -15,6 +15,7 @@ open Declarations
 open Environ
 open Reduction
 open Type_errors
+open Constr
 
 type mind_specif = mutual_inductive_body * one_inductive_body
 
@@ -26,20 +27,20 @@ let lookup_mind_specif env (kn,tyi) =
   (mib, mib.mind_packets.(tyi))
 
 let find_rectype env c =
-  let (t, l) = decompose_app (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
   match kind_of_term t with
   | Ind ind -> (ind, l)
   | _ -> raise Not_found
 
 let find_inductive env c =
-  let (t, l) = decompose_app (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
   match kind_of_term t with
     | Ind ind
         when (fst (lookup_mind_specif env ind)).mind_finite -> (ind, l)
     | _ -> raise Not_found
 
 let find_coinductive env c =
-  let (t, l) = decompose_app (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
   match kind_of_term t with
     | Ind ind
         when not (fst (lookup_mind_specif env ind)).mind_finite -> (ind, l)
@@ -239,14 +240,15 @@ let type_of_constructors ind (mib,mip) =
 (* Type of case predicates *)
 
 let local_rels ctxt =
-  let (rels,_) =
+  let (anns, rels,_) =
     Sign.fold_rel_context_reverse
-      (fun (rels,n) (_,copt,_) ->
-       cata_body (fun _ -> rels, n+1) (mkRel n :: rels, n+1) copt)
-      ~init:([],1)
+      (fun (anns,rels,n) (_,copt,_) ->
+       cata_body (fun _ -> anns, rels, n+1) 
+       (annot_of_body copt :: anns, mkRel n :: rels, n+1) copt)
+      ~init:([],[],1)
       ctxt
   in
-  rels
+  anns,rels
 
 (* Get type of inductive, with parameters instantiated *)
 
@@ -258,7 +260,7 @@ let inductive_sort_family mip =
 let mind_arity mip =
   mip.mind_arity_ctxt, inductive_sort_family mip
 
-let get_instantiated_arity (mib,mip) params =
+let get_instantiated_arity (mib,mip) (_, params) =
   let sign, s = mind_arity mip in
   full_inductive_instantiate mib params sign, s
 
@@ -274,11 +276,11 @@ let extended_rel_list n hyps =
 
 let build_dependent_inductive ind (_,mip) params =
   let realargs,_ = list_chop mip.mind_nrealargs_ctxt mip.mind_arity_ctxt in
-  applist
-    (mkInd ind,
-       List.map (lift mip.mind_nrealargs_ctxt) params
-       @ extended_rel_list 0 realargs)
-
+  app_annot_list (mkInd ind)
+  (concat_app_annot_list
+   (map_app_annot_list (lift mip.mind_nrealargs_ctxt) params)
+   (extended_rel_applist 0 realargs))
+  
 (* This exception is local *)
 exception LocalArity of (sorts_family * sorts_family * arity_error) option
 
@@ -324,28 +326,31 @@ let is_correct_arity env c pj ind specif params =
    and [cty] is the type of the constructor (params not instantiated) *)
 let build_branches_type ind (_,mip as specif) params p =
   let build_one_branch i cty =
-    let typi = full_constructor_instantiate (ind,specif,params) cty in
+    let typi = full_constructor_instantiate (ind,specif,snd params) cty in
     let (args,ccl) = decompose_prod_assum typi in
     let nargs = rel_context_length args in
-    let (_,allargs) = decompose_app ccl in
-    let (lparams,vargs) = list_chop (inductive_params specif) allargs in
+    let (_,allargs) = decompose_app_annot ccl in
+    let (lparams,vargs) = chop_app_annot_list (inductive_params specif) allargs in
     let cargs =
+      let ann = relevance_of_sorts_family (inductive_sort_family mip) in
       let cstr = ith_constructor_of_inductive ind (i+1) in
-      let dep_cstr = applist (mkConstruct cstr,lparams@(local_rels args)) in
-      vargs @ [dep_cstr] in
-    let base = beta_appvect (lift nargs p) (Array.of_list cargs) in
+      let dep_cstr = app_annot_list (mkConstruct cstr) 
+	(concat_app_annot_list lparams (local_rels args)) in
+      concat_app_annot_list vargs ([ann],[dep_cstr]) in
+    let base = beta_app_annot (lift nargs p) cargs in
     it_mkProd_or_LetIn base args in
   Array.mapi build_one_branch mip.mind_nf_lc
 
 (* [p] is the predicate, [c] is the match object, [realargs] is the
    list of real args of the inductive type *)
 let build_case_type n p c realargs =
-  whd_betaiota (betazeta_appvect (n+1) p (Array.of_list (realargs@[c])))
+  whd_betaiota (betazeta_app_annot (n+1) p 
+		(concat_app_annot realargs ([Expl],[c])))
 
 let type_case_branches env (ind,largs) pj c =
   let specif = lookup_mind_specif env ind in
   let nparams = inductive_params specif in
-  let (params,realargs) = list_chop nparams largs in
+  let (params,realargs) = chop_app_annot_list nparams largs in
   let p = pj.uj_val in
   let univ = is_correct_arity env c pj ind specif params in
   let lc = build_branches_type ind specif params p in
@@ -650,7 +655,7 @@ let check_one_fix renv recpos def =
     (* if [t] does not make recursive calls, it is guarded: *)
     if noccur_with_meta renv.rel_min nfi t then ()
     else
-      let (f,l) = Term.decompose_app (whd_betaiotazeta t) in
+      let (f,a,l) = Constr.decompose_app (whd_betaiotazeta t) in
       match kind_of_term f with
         | Rel p ->
             (* Test if [p] is a fixpoint (recursive call) *)
@@ -680,7 +685,7 @@ let check_one_fix renv recpos def =
                 | Some c ->
                     try List.iter (check_rec_call renv []) l
                     with FixGuardError _ ->
-                      check_rec_call renv stack (applist(lift p c,l))
+                      check_rec_call renv stack (Constr.applist(lift p c,a,l))
               end
 		
         | Case (ci,p,c_0,lrest) ->
@@ -725,7 +730,7 @@ let check_one_fix renv recpos def =
             if evaluable_constant kn renv.env then
               try List.iter (check_rec_call renv []) l
               with (FixGuardError _ ) ->
-		let value = (applist(constant_value renv.env kn, l)) in
+		let value = (applist(constant_value renv.env kn, a, l)) in
 	        check_rec_call renv stack value
 	    else List.iter (check_rec_call renv []) l
 
@@ -756,7 +761,7 @@ let check_one_fix renv recpos def =
               | Some c ->
                   try List.iter (check_rec_call renv []) l
                   with (FixGuardError _) -> 
-		    check_rec_call renv stack (applist(c,l))
+		    check_rec_call renv stack (applist(c,a,l))
             end
 
 	| Sort _ -> assert (l = [])

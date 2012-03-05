@@ -136,6 +136,23 @@ let betazeta_appvect n c v =
       | _ -> anomaly "Not enough lambda/let's" in
   stacklam n [] c (Array.to_list v)
 
+let beta_app_annot c (ans, args) =
+  let rec stacklam env t ans args =
+    match kind_of_term t, ans, args with
+        Lambda(_,_,c), _ :: ans, arg::args -> stacklam (arg::env) c ans args
+      | _ -> Constr.app_annot_list (substl env t) (ans, args) in
+  stacklam [] c ans args
+
+let betazeta_app_annot n c (ans, args) =
+  let rec stacklam n env t ans args =
+    if n = 0 then Constr.app_annot_list (substl env t) (ans, args)
+    else
+      match kind_of_term t, ans, args with
+        Lambda(_,_,c), _ :: ans, arg::args -> stacklam (n-1) (arg::env) c ans args
+      | LetIn(_,b,_,c), _, _ -> stacklam (n-1) (b::env) c ans args
+      | _ -> anomaly "Not enough lambda/let's" in
+  stacklam n [] c ans args
+
 (********************************************************************)
 (*                         Conversion                               *)
 (********************************************************************)

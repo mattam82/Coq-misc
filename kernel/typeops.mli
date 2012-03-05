@@ -28,10 +28,6 @@ val infer_local_decls :
 (** If [j] is the judgement {% $ %}c:t{% $ %}, then [assumption_of_judgement env j]
    returns the type {% $ %}c{% $ %}, checking that {% $ %}t{% $ %} is a sort. *)
 
-val relevance_of_sort : sorts -> relevance
-
-val relevance_of_sorts_family : sorts_family -> relevance
-
 (** [relevance_of_type t] First infers the sort of [t] and returns its relevance *)
 val relevance_of_type : env -> types -> relevance
 
@@ -57,7 +53,7 @@ val judge_of_constant_knowing_parameters :
 (** {6 Type of application. } *)
 val judge_of_apply :
   env -> unsafe_judgment -> unsafe_type_judgment -> 
-  (relevance * relevance array) -> unsafe_judgment array
+  relevance array -> unsafe_judgment array
     -> unsafe_judgment * constraints
 
 (** {6 Type of an abstraction. } *)

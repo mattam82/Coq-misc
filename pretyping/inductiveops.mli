@@ -27,8 +27,8 @@ val arities_of_constructors : env -> inductive -> types array
 
 (** An inductive type with its parameters *)
 type inductive_family
-val make_ind_family : inductive * constr list -> inductive_family
-val dest_ind_family : inductive_family -> inductive * constr list
+val make_ind_family : inductive * constr app_annot_list -> inductive_family
+val dest_ind_family : inductive_family -> inductive * constr app_annot_list
 val map_ind_family : (constr -> constr) -> inductive_family -> inductive_family
 val liftn_inductive_family : int -> int -> inductive_family -> inductive_family
 val lift_inductive_family  : int -> inductive_family -> inductive_family
@@ -36,9 +36,9 @@ val substnl_ind_family :
   constr list -> int -> inductive_family -> inductive_family
 
 (** An inductive type with its parameters and real arguments *)
-type inductive_type = IndType of inductive_family * constr list
-val make_ind_type : inductive_family * constr list -> inductive_type
-val dest_ind_type : inductive_type -> inductive_family * constr list
+type inductive_type = IndType of inductive_family * constr app_annot_list
+val make_ind_type : inductive_family * constr app_annot_list -> inductive_type
+val dest_ind_type : inductive_type -> inductive_family * constr app_annot_list
 val map_inductive_type : (constr -> constr) -> inductive_type -> inductive_type
 val liftn_inductive_type : int -> int -> inductive_type -> inductive_type
 val lift_inductive_type  : int -> inductive_type -> inductive_type
@@ -106,11 +106,11 @@ val make_arity : env -> bool -> inductive_family -> sorts -> types
 val build_branch_type : env -> bool -> constr -> constructor_summary -> types
 
 (** Raise [Not_found] if not given an valid inductive type *)
-val extract_mrectype : constr -> inductive * constr list
-val find_mrectype    : env -> evar_map -> types -> inductive * constr list
+val extract_mrectype : constr -> inductive * constr app_annot_list
+val find_mrectype    : env -> evar_map -> types -> inductive * constr app_annot_list
 val find_rectype     : env -> evar_map -> types -> inductive_type
-val find_inductive   : env -> evar_map -> types -> inductive * constr list
-val find_coinductive : env -> evar_map -> types -> inductive * constr list
+val find_inductive   : env -> evar_map -> types -> inductive * constr app_annot_list
+val find_coinductive : env -> evar_map -> types -> inductive * constr app_annot_list
 
 (********************)
 

@@ -203,8 +203,6 @@ let extended_rel_list n hyps =
 
 let extended_rel_vect n hyps = Array.of_list (extended_rel_list n hyps)
 
-
-
 let push_rel_assum (x,t) env = push_rel (var_decl_of x t) env
 
 let push_rels_assum assums =
@@ -360,12 +358,12 @@ let map_constr_with_binders_left_to_right g f l c = match kind_of_term c with
       let c' = f (g (def_decl_of na b t) l) c in
       mkLetIn (na, b', t', c')
   | App (c,_,[||]) -> assert false
-  | App (c,(cann,alann),al) ->
+  | App (c,alann,al) ->
       (*Special treatment to be able to recognize partially applied subterms*)
       let al', a = array_decompose_last al in
       let aln', an = array_decompose_last alann in
-      let hd = f l (mkApp (c, (cann, aln'), al')) in
-      mkApp (hd, (cann, [|an|]), [| f l a |])
+      let hd = f l (mkApp (c, aln', al')) in
+      mkApp (hd, [|an|], [| f l a |])
   | Evar (e,al) -> mkEvar (e, array_map_left (f l) al)
   | Case (ci,p,c,bl) ->
       (* In v8 concrete syntax, predicate is after the term to match! *)
@@ -577,9 +575,9 @@ let dependent_main noevar m t =
       raise Occur
     else
       match kind_of_term m, kind_of_term t with
-	| App (fm,(am,ams),lm), App (ft,(at,ats),lt) when Array.length lm < Array.length lt ->
+	| App (fm,ams,lm), App (ft,ats,lt) when Array.length lm < Array.length lt ->
 	    deprec m 
-	    (mkApp (ft, (at, Array.sub ats 0 (Array.length lm)), Array.sub lt 0 (Array.length lm)));
+	    (mkApp (ft, Array.sub ats 0 (Array.length lm), Array.sub lt 0 (Array.length lm)));
 	    Array.iter (deprec m)
 	      (Array.sub lt
 		(Array.length lm) ((Array.length lt) - (Array.length lm)))
@@ -602,8 +600,8 @@ let count_occurrences m t =
       incr n
     else
       match kind_of_term m, kind_of_term t with
-	| App (fm,am,lm), App (ft,(at,ats),lt) when Array.length lm < Array.length lt ->
-	    countrec m (mkApp (ft,(at,Array.sub ats 0 (Array.length lm)),
+	| App (fm,am,lm), App (ft,ats,lt) when Array.length lm < Array.length lt ->
+	    countrec m (mkApp (ft,Array.sub ats 0 (Array.length lm),
 			       Array.sub lt 0 (Array.length lm)));
 	    Array.iter (countrec m)
 	      (Array.sub lt
@@ -638,12 +636,12 @@ let rec subst_meta bl c =
 let prefix_application eq_fun (k,c) (t : constr) =
   let c' = collapse_appl c and t' = collapse_appl t in
   match kind_of_term c', kind_of_term t' with
-    | App (f1,a1,cl1), App (f2,(a2,as2),cl2) ->
+    | App (f1,a1,cl1), App (f2,a2,cl2) ->
 	let l1 = Array.length cl1
 	and l2 = Array.length cl2 in
 	if l1 <= l2
-	   && eq_fun c' (mkApp (f2,(a2,Array.sub as2 0 l1),Array.sub cl2 0 l1)) then
-	  Some (mkApp (mkRel k, (a2,Array.sub as2 l1 (l2 - l1)), Array.sub cl2 l1 (l2 - l1)))
+	   && eq_fun c' (mkApp (f2,Array.sub a2 0 l1,Array.sub cl2 0 l1)) then
+	  Some (mkApp (mkRel k, Array.sub a2 l1 (l2 - l1), Array.sub cl2 l1 (l2 - l1)))
 	else
 	  None
     | _ -> None
@@ -651,12 +649,12 @@ let prefix_application eq_fun (k,c) (t : constr) =
 let my_prefix_application eq_fun (k,c) (by_c : constr) (t : constr) =
   let c' = collapse_appl c and t' = collapse_appl t in
   match kind_of_term c', kind_of_term t' with
-    | App (f1,a1,cl1), App (f2,(a2,as2),cl2) ->
+    | App (f1,a1,cl1), App (f2,a2,cl2) ->
 	let l1 = Array.length cl1
 	and l2 = Array.length cl2 in
 	if l1 <= l2
-	   && eq_fun c' (mkApp (f2,(a2,Array.sub as2 0 l1),Array.sub cl2 0 l1)) then
-	  Some (mkApp ((lift k by_c),(a2,Array.sub as2 l1 (l2 - l1)), Array.sub cl2 l1 (l2 - l1)))
+	   && eq_fun c' (mkApp (f2,Array.sub a2 0 l1,Array.sub cl2 0 l1)) then
+	  Some (mkApp ((lift k by_c),Array.sub a2 l1 (l2 - l1), Array.sub cl2 l1 (l2 - l1)))
 	else
 	  None
     | _ -> None
@@ -920,20 +918,21 @@ let rec constr_cmp cv_pb t1 t2 = compare_constr_univ constr_cmp cv_pb t1 t2
 let eq_constr = constr_cmp Reduction.CONV
 
 let destBinApp c = match kind_of_term c with
-    App(c,(a,ans),l) ->
+    App(c,a,l) ->
       let prev, last = array_decompose_last l in
-      let preva, lasta = array_decompose_last ans in
-	mkApp(c,(a,preva),prev), (lasta, last)
+      let preva, lasta = array_decompose_last a in
+	mkApp(c,preva,prev), (lasta, last)
   | _ -> assert false
 
-(* App(c,[t1,...tn]) -> ([c,t1,...,tn-1],tn)
-   App(c,[||]) -> ([],c) *)
+(* App(c,[t1,...tn]) -> (Some (c,[t1,...,tn-1]),tn)
+   App(c,[||]) -> (None,c) *)
 let split_app c = match kind_of_term c with
-    App(c,(a,ans),l) ->
+    App(c,a,l) ->
       let len = Array.length l in
-      if len=0 then ([],c) else
+      if len=0 then (None,c) else
+	let preva, lasta = array_decompose_last a in
 	let prev, last = array_decompose_last l in
-	c::(Array.to_list prev), last
+	  Some (c, Array.to_list preva, Array.to_list prev), last
   | _ -> assert false
 
 let hdtl l = List.hd l, List.tl l
@@ -955,8 +954,8 @@ let filtering env cv_pb c1 c2 =
     match kind_of_term c1, kind_of_term c2 with
       | App _, App _ ->
 	  let ((p1,l1),(p2,l2)) = (split_app c1),(split_app c2) in
-	  aux env cv_pb l1 l2; if p1=[] & p2=[] then () else
-	      aux env cv_pb (applist (hdtl p1)) (applist (hdtl p2))
+	  aux env cv_pb l1 l2; if p1=None & p2=None then () else
+	      aux env cv_pb (applist (Option.get p1)) (applist (Option.get p2))
       | Prod (n,t1,c1), Prod (_,t2,c2) ->
 	  aux env cv_pb t1 t2;
 	  aux (var_decl_of n t1::env) cv_pb c1 c2
@@ -993,7 +992,7 @@ let rec eta_reduce_head c =
   match kind_of_term c with
     | Lambda (_,c1,c') ->
 	(match kind_of_term (eta_reduce_head c') with
-           | App (f,(fa,cla),cl) ->
+           | App (f,cla,cl) ->
                let lastn = (Array.length cl) - 1 in
                if lastn < 1 then anomaly "application without arguments"
                else
@@ -1001,7 +1000,7 @@ let rec eta_reduce_head c =
                     | Rel 1 ->
 			let c' =
                           if lastn = 1 then f
-			  else mkApp (f, (fa,Array.sub cla 0 lastn), Array.sub cl 0 lastn)
+			  else mkApp (f, Array.sub cla 0 lastn, Array.sub cl 0 lastn)
 			in
 			if noccurn 1 c'
                         then lift (-1) c'

@@ -23,7 +23,7 @@ exception Elimconst
    one by one *)
 
 type 'a stack_member =
-  | Zapp of 'a list
+  | Zapp of 'a app_annot_list
   | Zcase of case_info * 'a * 'a array
   | Zfix of 'a * 'a stack
   | Zshift of int
@@ -32,12 +32,12 @@ type 'a stack_member =
 and 'a stack = 'a stack_member list
 
 val empty_stack : 'a stack
-val append_stack : 'a array -> 'a stack -> 'a stack
-val append_stack_list : 'a list -> 'a stack -> 'a stack
+val append_stack : annot array -> 'a array -> 'a stack -> 'a stack
+val append_stack_list : annot list -> 'a list -> 'a stack -> 'a stack
 
 val decomp_stack : 'a stack -> ('a * 'a stack) option
-val list_of_stack : 'a stack -> 'a list
-val array_of_stack : 'a stack -> 'a array
+val list_of_stack : 'a stack -> 'a app_annot_list
+val array_of_stack : 'a stack -> 'a app_annot
 val stack_assign : 'a stack -> int -> 'a -> 'a stack
 val stack_args_size : 'a stack -> int
 val app_stack : constr * constr stack -> constr
@@ -53,10 +53,10 @@ type reduction_function = contextual_reduction_function
 type local_reduction_function = evar_map -> constr -> constr
 
 type contextual_stack_reduction_function =
-    env -> evar_map -> constr -> constr * constr list
+    env -> evar_map -> constr -> constr application_list
 type stack_reduction_function = contextual_stack_reduction_function
 type local_stack_reduction_function =
-    evar_map -> constr -> constr * constr list
+    evar_map -> constr -> constr application_list
 
 type contextual_state_reduction_function =
     env -> evar_map -> state -> state
@@ -141,7 +141,7 @@ val whd_zeta : constr -> constr
 
 val safe_evar_value : evar_map -> existential -> constr option
 
-val beta_applist : constr * constr list -> constr
+val beta_applist : constr application_list -> constr
 
 val hnf_prod_app     : env ->  evar_map -> constr -> constr -> constr
 val hnf_prod_appvect : env ->  evar_map -> constr -> constr array -> constr
@@ -165,7 +165,7 @@ type 'a miota_args = {
   mP      : constr;     (** the result type *)
   mconstr : constr;     (** the constructor *)
   mci     : case_info;  (** special info to re-build pattern *)
-  mcargs  : 'a list;    (** the constructor's arguments *)
+  mcargs  : 'a app_annot_list;    (** the constructor's arguments *)
   mlf     : 'a array }  (** the branch code vector *)
 
 val reducible_mind_case : constr -> bool

@@ -66,6 +66,9 @@ val beta_appvect : constr -> constr array -> constr
 (** Builds an application node, reducing the [n] first beta-zeta redexes. *)
 val betazeta_appvect : int -> constr -> constr array -> constr
 
+val beta_app_annot : constr -> constr app_annot_list -> constr
+val betazeta_app_annot : int -> constr -> constr app_annot_list -> constr
+
 (** Pseudo-reduction rule  Prod(x,A,B) a --> B[x\a] *)
 val hnf_prod_applist : env -> types -> constr list -> types
 

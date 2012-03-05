@@ -67,11 +67,18 @@ type types = constr
 
 type relevance = Expl | Irr
 type implicit = bool
-type 'a binder_annot = 'a * (relevance * implicit)
-type 'a letbinder_annot = 'a * relevance
-type app_annot = relevance * relevance array
-type app_annot_list = relevance * relevance list
-type 'a annot = relevance * 'a
+
+type annot = relevance
+type 'a binder_annot = 'a * (annot * implicit)
+type 'a letbinder_annot = 'a * annot
+type 'a application = 'a * annot array * 'a array
+type 'a application_list = 'a * annot list * 'a list
+
+type 'a app_annot = annot array * 'a array
+type 'a app_annot_list = annot list * 'a list
+
+val relevance_of_sort : sorts -> relevance
+val relevance_of_sorts_family : sorts_family -> relevance
 
 (** {5 Functions for dealing with constr terms. }
   The following functions are intended to simplify and to uniform the
@@ -215,7 +222,7 @@ module Constr : sig
     | Prod      of name binder_annot * 'types * 'types
     | Lambda    of name binder_annot * 'types * 'constr
     | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
-    | App       of 'constr * app_annot * 'constr array
+    | App       of 'constr application
     | Const     of constant
     | Ind       of inductive
     | Construct of constructor
@@ -226,18 +233,36 @@ module Constr : sig
   val kind_of_term : constr -> (constr, types) kind_of_term
 
   val mkProd : name binder_annot * types * types -> types
-  val mkArrow : relevance -> types -> types -> types
+  val mkArrow : annot -> types -> types -> types
   val mkLetIn : name letbinder_annot * constr * types * constr -> constr
   val mkLambda : name binder_annot * types * constr -> constr
-  val mkApp : constr * app_annot * constr array -> constr
+  val mkApp : constr application -> constr
 
   val destProd : types -> name binder_annot * types * types
   val destLambda : constr -> name binder_annot * types * constr
   val destLetIn : constr -> name letbinder_annot * types * constr * constr
-  val destApp : constr -> constr * app_annot * constr array
+  val destApp : constr -> constr application
 
-  val decompose_app : constr -> constr annot * constr annot list
-  val recompose_app : constr annot -> constr annot list -> constr
+  val decompose_app : constr -> constr application_list
+  val recompose_app : constr -> (annot * constr) list -> constr
+      
+  val map_app_annot : ('a -> 'b) -> 'a app_annot -> 'b app_annot
+  val map_app_annot_list : ('a -> 'b) -> 'a app_annot_list -> 'b app_annot_list
+    
+  val app_annot : constr -> constr app_annot -> constr
+  val app_annot_list : constr -> constr app_annot_list -> constr
+    
+  val decompose_app_annot : constr -> constr * constr app_annot_list
+
+  val chop_app_annot_list : int -> 'a app_annot_list -> 'a app_annot_list * 'a app_annot_list
+    
+  val concat_app_annot : 'a app_annot -> 'a app_annot -> 'a app_annot
+  val concat_app_annot_list : 'a app_annot_list -> 'a app_annot_list -> 'a app_annot_list
+
+  val applist : constr application_list -> constr
+  val applistc : constr -> annot list -> constr list -> constr
+
+  val appvect : constr application -> constr
     
   val decompose_prod : constr -> (name binder_annot * constr) list * constr
   val decompose_lam : constr -> (name binder_annot * constr) list * constr
@@ -345,8 +370,6 @@ val destLetIn : constr -> name * constr * types * constr
 (** Destructs an application *)
 val destApp : constr -> constr * constr array
 
-val destFullApp : constr -> constr * (relevance * relevance array) * constr array
-
 (** Obsolete synonym of destApp *)
 val destApplication : constr -> constr * constr array
 
@@ -393,13 +416,15 @@ val destCoFix : constr -> cofixpoint
     purpose) *)
 
 type body = 
-  | Variable of (relevance * implicit)
-  | Definition of relevance * constr
+  | Variable of (annot * implicit)
+  | Definition of annot * constr
 
 val variable_body : body
 val definition_body : constr -> body
 val constr_of_body : body -> constr option
 val is_variable_body : body -> bool
+val annot_of_body : body -> annot
+
 
 val map_body : (constr -> constr) -> body -> body
 val smartmap_body : (constr -> constr) -> body -> body
@@ -417,8 +442,8 @@ type rel_declaration = name declaration
 val name_of : 'a binder_annot -> 'a
 val letname_of : 'a letbinder_annot -> 'a
 
-val relevance_of : 'a binder_annot -> relevance
-val letrelevance_of : 'a letbinder_annot -> relevance
+val annot_of : 'a binder_annot -> annot
+val letannot_of : 'a letbinder_annot -> annot
 
 val binder_annot_of : 'a -> 'a binder_annot
 val letbinder_annot_of : 'a -> 'a letbinder_annot
@@ -494,6 +519,9 @@ val applist : constr * constr list -> constr
 val applistc : constr -> constr list -> constr
 val appvect : constr * constr array -> constr
 val appvectc : constr -> constr array -> constr
+
+val extended_rel_applist : int -> rel_context -> constr app_annot_list
+val extended_rel_appvect : int -> rel_context -> constr app_annot
 
 (** [prodn n l b] = [forall (x_1:T_1)...(x_n:T_n), b]
    where [l] is [(x_n,T_n)...(x_1,T_1)...]. *)

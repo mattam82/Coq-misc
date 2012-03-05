@@ -104,7 +104,7 @@ type fterm =
   | FFlex of table_key
   | FInd of inductive
   | FConstruct of constructor
-  | FApp of fconstr * (app_annot * fconstr array)
+  | FApp of fconstr application
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCases of case_info * fconstr * fconstr * fconstr array
@@ -122,7 +122,7 @@ type fterm =
    one by one *)
 
 type stack_member =
-  | Zapp of app_annot * fconstr array
+  | Zapp of fconstr app_annot
   | Zcase of case_info * fconstr * fconstr array
   | Zfix of fconstr * relevance * stack
   | Zshift of int
@@ -131,7 +131,7 @@ type stack_member =
 and stack = stack_member list
 
 val empty_stack : stack
-val append_stack : app_annot * fconstr array -> stack -> stack
+val append_stack : fconstr app_annot -> stack -> stack
 
 val decomp_stack : stack -> (fconstr * stack) option
 val array_of_stack : stack -> fconstr array

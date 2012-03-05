@@ -75,14 +75,25 @@ let family_of_sort = function
 
 type relevance = Expl | Irr
 
+let relevance_of_sort = function
+  | Prop Null -> Irr
+  | _ -> Expl
+
+let relevance_of_sorts_family = function
+  | InProp -> Irr
+  | _ -> Expl
+
 type implicit = bool
 
-type 'a binder_annot = 'a * (relevance * implicit)
-type 'a letbinder_annot = 'a * relevance
-type app_annot = relevance * relevance array
-type app_annot_list = relevance * relevance list
-type 'a annot = relevance * 'a
+type annot = relevance
+type 'a binder_annot = 'a * (annot * implicit)
+type 'a letbinder_annot = 'a * annot
+type 'a application = 'a * annot array * 'a array
+type 'a application_list = 'a * annot list * 'a list
 
+type 'a app_annot = annot array * 'a array
+type 'a app_annot_list = annot list * 'a list
+      
 (* [constr array] is an instance matching definitional [named_context] in
    the same order (i.e. last argument first) *)
 type 'constr pexistential = existential_key * 'constr array
@@ -96,8 +107,8 @@ type ('constr, 'types) pcofixpoint =
 let name_of (name, annot) = name
 let letname_of (name, annot) = name
 
-let relevance_of (_, (rel, _)) = rel
-let letrelevance_of (_, rel) = rel
+let annot_of (_, (rel, _)) = rel
+let letannot_of (_, rel) = rel
 
 let map_binder f (name, annot) = (f name, annot)
 let map_letbinder f (name, annot) = (f name, annot)
@@ -125,7 +136,7 @@ module Constr = struct
     | Prod      of name binder_annot * 'types * 'types
     | Lambda    of name binder_annot * 'types * 'constr
     | LetIn     of name letbinder_annot * 'constr * 'types * 'constr
-    | App       of 'constr * app_annot * 'constr array
+    | App       of 'constr application
     | Const     of constant
     | Ind       of inductive
     | Construct of constructor
@@ -140,12 +151,12 @@ module Constr = struct
   let mkArrow rel t1 t2 = Prod ((Anonymous, (rel, false)), t1, t2)
   let mkLambda (x,t1,t2) = Lambda (x,t1,t2)
   let mkLetIn (x,ct,t,c2) = LetIn (x,ct,t,c2)
-  let mkApp (f, (r, ra), a) =
+  let mkApp (f,ra,a) =
     if Array.length a = 0 then f else
       match f with
-      | App (g, (gi, r'), cl) -> 
-	App (g, (merge_rel gi r, Array.append r' ra), Array.append cl a)
-      | _ -> App (f, (r, ra), a)
+      | App (g, r', cl) -> 
+	App (g, Array.append r' ra, Array.append cl a)
+      | _ -> App (f, ra, a)
 
   let destProd = function
     | Prod (na, b, t) -> (na, b, t)
@@ -164,14 +175,29 @@ module Constr = struct
     | _ -> invalid_arg "destApp"
 
   let decompose_app = function
-    | App (f,(a,ans),args) -> 
-	let args = array_fold_right2 (fun a arg acc -> (a, arg) :: acc) ans args [] in
-	  ((a, f), args)
+    | App (f,ans,args) -> (f, Array.to_list ans, Array.to_list args)
     | _ -> invalid_arg "decompose_app"
-	
-  let recompose_app (a, f) anargs = 
+
+  let map_app_annot f (an,args) = (an, Array.map f args)
+  let map_app_annot_list f (an,args) = (an, List.map f args)
+
+  let app_annot f (an, args) = mkApp (f, an, args)
+  let app_annot_list f (an, args) = mkApp (f, Array.of_list an, Array.of_list args)
+
+  let decompose_app_annot = function
+    | App (f,ans,args) -> (f, (Array.to_list ans, Array.to_list args))
+    | _ -> invalid_arg "decompose_app_annot"
+
+  let applistc f ans args =
+      App (f, Array.of_list ans, Array.of_list args)
+
+  let applist (f,ans,args) = applistc f ans args
+
+  let appvect (f,ans,args) = App (f, ans, args)
+
+  let recompose_app f anargs = 
     let ans, args = List.split anargs in
-      App (f, (a, Array.of_list ans), Array.of_list args)
+      applistc f ans args
 
   (* Transforms a product term (x1:T1)..(xn:Tn)T into the pair
      ([(xn,Tn);...;(x1,T1)],T), where T is not a product *)
@@ -221,6 +247,18 @@ module Constr = struct
   let compose_lam l b = lamn (List.length l) l b
 
   let kind_of_term c = c
+
+
+  let chop_app_annot_list n (ans, args) =
+    let ans1, ans2 = list_chop n ans in
+    let args1, args2 = list_chop n args in
+      (ans1, args1), (ans2, args2)
+
+  let concat_app_annot (ans1, args1) (ans2, args2) =
+    (Array.append ans1 ans2, Array.append args1 args2)
+    
+  let concat_app_annot_list (ans1, args1) (ans2, args2) =
+    (ans1 @ ans2, args1 @ args2)
 
 end
 
@@ -553,12 +591,12 @@ let rec under_casts f c = match kind_of_term c with
 (* flattens application lists throwing casts in-between *)
 let rec collapse_appl c = match kind_of_term c with
   | App (f, rel, cl) ->
-      let rec collapse_rec f (rel, rels2 as r) cl2 =
+      let rec collapse_rec f rels2 cl2 =
         match kind_of_term (strip_outer_cast f) with
-	| App (g, (rel', rels1), cl1) -> 
-	    collapse_rec g (merge_rel rel rel', Array.append rels1 rels2)
+	| App (g, rels1, cl1) -> 
+	    collapse_rec g (Array.append rels1 rels2)
 	      (Array.append cl1 cl2)
-	| _ -> Constr.mkApp (f, r, cl2)
+	| _ -> Constr.mkApp (f, rels2, cl2)
       in
       collapse_rec f rel cl
   | _ -> c
@@ -877,6 +915,18 @@ let rel_context_nhyps hyps =
     | (_,_,_)::hyps -> nhyps acc hyps in
   nhyps 0 hyps
 
+let extended_rel_applist n hyps =
+  let rec reln a l p = function
+    | (_,Variable (ann,_),_) :: hyps -> reln (ann :: a) (mkRel (n+p) :: l) (p+1) hyps
+    | (_,Definition (ann,_),_) :: hyps -> reln a l (p+1) hyps
+    | [] -> a, l
+  in
+  reln [] [] 1 hyps
+
+let extended_rel_appvect n hyps = 
+  let ans, args = extended_rel_applist n hyps in 
+    Array.of_list ans, Array.of_list args
+
 (****************************************************************************)
 (*              Functions for dealing with constr terms                     *)
 (****************************************************************************)
@@ -1100,6 +1150,10 @@ let constr_of_body = function
   | Variable _ -> None
   | Definition (_, c) -> Some c
 
+let annot_of_body = function
+  | Variable (ann, _) -> ann
+  | Definition (ann, c) -> ann
+
 let is_variable_body = function
   | Variable _ -> true
   | Definition _ -> false
@@ -1153,7 +1207,7 @@ let compose_lam l b = lamn (List.length l) l b
 let mkApp (f, a) =
   if Array.length a = 0 then f else
     let r = Array.make (Array.length a) Expl in
-      Constr.mkApp (f, (Expl, r), a)
+      Constr.mkApp (f, r, a)
 
 let applist (f,l) = mkApp (f, Array.of_list l)
 

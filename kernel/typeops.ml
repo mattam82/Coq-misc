@@ -38,14 +38,6 @@ let type_judgment env j =
     | Sort s -> {utj_val = j.uj_val; utj_type = s }
     | _ -> error_not_type env j
 
-let relevance_of_sort = function
-  | Prop Null -> Irr
-  | _ -> Expl
-
-let relevance_of_sorts_family = function
-  | InProp -> Irr
-  | _ -> Expl
-
 (* This should be a type intended to be assumed. The error message is *)
 (* not as useful as for [type_judgment]. *)
 let assumption_of_judgment env j =
@@ -204,15 +196,11 @@ let judge_of_letin env name defj typj j =
 
 (* Type of an application. *)
 
-let judge_of_apply env funj funjty (rel,rels) argjv =
+let judge_of_apply env funj funjty rels argjv =
   let rec apply_rec n typ cst = function
     | [], [] ->
-      let funjirr = relevance_of_sort funjty.utj_type in
-	if funjirr <> rel then
-	  error_relevance_mismatch env funjty.utj_val funjirr rel
-	else
-	  { uj_val  = mkApp (j_val funj, (rel, rels), Array.map j_val argjv);
-            uj_type = typ }, cst
+      { uj_val  = mkApp (j_val funj, rels, Array.map j_val argjv);
+        uj_type = typ }, cst
     | irr::restrels, hj::restjl ->
       let red = whd_betadeltaiota env typ in
         (match kind_of_term red with
