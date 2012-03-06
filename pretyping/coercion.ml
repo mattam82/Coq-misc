@@ -85,7 +85,7 @@ module Default = struct
   (* Here, funj is a coercion therefore already typed in global context *)
   let apply_coercion_args env argl funj =
     let rec apply_rec acc typ = function
-      | [] -> { uj_val = applist (j_val funj,argl);
+      | [] -> { uj_val = app_argsl (j_val funj,argl);
 		uj_type = typ }
       | h::restl ->
 	  (* On devrait pouvoir s'arranger pour qu'on n'ait pas à faire hnf_constr *)
@@ -95,7 +95,7 @@ module Default = struct
 		apply_rec (h::acc) (subst1 h c2) restl
 	    | _ -> anomaly "apply_coercion_args"
     in
-      apply_rec [] funj.uj_type argl
+      apply_rec [] funj.uj_type (snd argl)
 
   (* appliquer le chemin de coercions de patterns p *)
   let apply_pattern_coercion loc pat p =
@@ -120,7 +120,9 @@ module Default = struct
       fst (List.fold_left
              (fun (ja,typ_cl) i ->
 		let fv,isid = coercion_value i in
-		let argl = (class_args_of env sigma typ_cl)@[ja.uj_val] in
+		let rel = Retyping.get_relevance_of env sigma ja.uj_type in
+		let argl = concat_argsl (class_args_of env sigma typ_cl)
+		  ([rel],[ja.uj_val]) in
 		let jres = apply_coercion_args env argl fv in
 		  (if isid then
 		     { uj_val = ja.uj_val; uj_type = jres.uj_type }
@@ -217,7 +219,7 @@ module Default = struct
 	  inh_conv_coerce_to_fail loc env1 evd rigidonly
             (Some (mkRel 1)) (lift 1 u1) (lift 1 t1) in
         let v1 = Option.get v1 in
-	let v2 = Option.map (fun v -> beta_applist (lift 1 v,[v1])) v in
+	let v2 = Option.map (fun v -> beta_applist (lift 1 v,[annot_of name],[v1])) v in
 	let t2 = match v2 with
 	  | None -> subst_term v1 t2
 	  | Some v2 -> Retyping.get_type_of env1 evd' v2 in

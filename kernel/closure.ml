@@ -333,7 +333,7 @@ let update v1 (no,t) =
 (* The type of (machine) stacks (= lambda-bar-calculus' contexts)     *)
 
 type stack_member =
-  | Zapp of fconstr app_annot
+  | Zapp of fconstr args
   | Zcase of case_info * fconstr * fconstr array
   | Zfix of fconstr * relevance * stack
   | Zshift of int

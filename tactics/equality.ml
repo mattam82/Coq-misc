@@ -528,8 +528,8 @@ exception DiscrFound of
 
 let find_positions env sigma t1 t2 =
   let rec findrec sorts posn t1 t2 =
-    let hd1,args1 = whd_betadeltaiota_stack env sigma t1 in
-    let hd2,args2 = whd_betadeltaiota_stack env sigma t2 in
+    let hd1,(ann1,args1) = whd_betadeltaiota_stack env sigma t1 in
+    let hd2,(ann2,args2) = whd_betadeltaiota_stack env sigma t2 in
     match (kind_of_term hd1, kind_of_term hd2) with
 
       | Construct sp1, Construct sp2
@@ -946,10 +946,11 @@ let sig_clausal_form env sigma sort_of_ty siglen ty dflt =
 	error "Cannot solve a unification problem."
     else
       let (a,p_i_minus_1) = match whd_beta_stack !evdref p_i with
-	| (_sigS,[a;p]) -> (a,p)
+	| (_sigS,([an;ans],[a;p])) -> (a,p)
  	| _ -> anomaly "sig_clausal_form: should be a sigma type" in
       let ev = Evarutil.e_new_evar evdref env a in
-      let rty = beta_applist(p_i_minus_1,[ev]) in
+      let rel = Retyping.get_relevance_of env !evdref a in
+      let rty = beta_applist(p_i_minus_1,[rel],[ev]) in
       let tuple_tail = sigrec_clausal_form (siglen-1) rty in
       match
         Evd.existential_opt_value !evdref
@@ -1251,7 +1252,7 @@ let decomp_tuple_term env c t =
       let {proj1=p1; proj2=p2},(a,p,car,cdr) = find_sigma_data_decompose ex in
       let car_code = applist (p1,[a;p;inner_code])
       and cdr_code = applist (p2,[a;p;inner_code]) in
-      let cdrtyp = beta_applist (p,[car]) in
+      let cdrtyp = beta_applist (p,[Expl],[car]) in
       List.map (fun l -> ((car,a),car_code)::l) (decomprec cdr_code cdr cdrtyp)
     with PatternMatchingFailure ->
       []
@@ -1277,8 +1278,8 @@ let subst_tuple_term env sigma dep_pair1 dep_pair2 b =
   let abst_B =
     List.fold_right
       (fun (e,t) body -> lambda_create env (t,subst_term e body)) e1_list b in
-  let pred_body = beta_applist(abst_B,proj_list) in
-  let expected_goal = beta_applist (abst_B,List.map fst e2_list) in
+  let pred_body = beta_applist_expl(abst_B,proj_list) in
+  let expected_goal = beta_applist_expl (abst_B,List.map fst e2_list) in
   (* Simulate now the normalisation treatment made by Logic.mk_refgoals *)
   let expected_goal = nf_betaiota sigma expected_goal in
   pred_body,expected_goal

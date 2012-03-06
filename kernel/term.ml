@@ -91,8 +91,8 @@ type 'a letbinder_annot = 'a * annot
 type 'a application = 'a * annot array * 'a array
 type 'a application_list = 'a * annot list * 'a list
 
-type 'a app_annot = annot array * 'a array
-type 'a app_annot_list = annot list * 'a list
+type 'a args = annot array * 'a array
+type 'a args_list = annot list * 'a list
       
 (* [constr array] is an instance matching definitional [named_context] in
    the same order (i.e. last argument first) *)
@@ -176,17 +176,27 @@ module Constr = struct
 
   let decompose_app = function
     | App (f,ans,args) -> (f, Array.to_list ans, Array.to_list args)
-    | _ -> invalid_arg "decompose_app"
+    | c -> (c, [], [])
 
-  let map_app_annot f (an,args) = (an, Array.map f args)
-  let map_app_annot_list f (an,args) = (an, List.map f args)
+  let map_args f (an,args) = (an, Array.map f args)
+  let map_argsl f (an,args) = (an, List.map f args)
 
-  let app_annot f (an, args) = mkApp (f, an, args)
-  let app_annot_list f (an, args) = mkApp (f, Array.of_list an, Array.of_list args)
+  let app_args (f, (an, args)) = mkApp (f, an, args)
+  let app_argslc f (an, args) = mkApp (f, Array.of_list an, Array.of_list args)
+  let app_argsl (f, (an, args)) = mkApp (f, Array.of_list an, Array.of_list args)
 
-  let decompose_app_annot = function
+  let decompose_app_argsl = function
     | App (f,ans,args) -> (f, (Array.to_list ans, Array.to_list args))
-    | _ -> invalid_arg "decompose_app_annot"
+    | c -> (c, ([],[]))
+
+  let is_empty_argsl (a,l) = l = []
+  let argsl_length (a,l) = List.length l
+
+  let argsl_skipn n (a, l) = 
+    list_skipn n a, list_skipn n l
+
+  let argsl_firstn n (a, l) = 
+    list_firstn n a, list_firstn n l
 
   let applistc f ans args =
       App (f, Array.of_list ans, Array.of_list args)
@@ -248,16 +258,20 @@ module Constr = struct
 
   let kind_of_term c = c
 
+  let chop_args n (ans, args) =
+    let ans1, ans2 = array_chop n ans in
+    let args1, args2 = array_chop n args in
+      (ans1, args1), (ans2, args2)
 
-  let chop_app_annot_list n (ans, args) =
+  let chop_argsl n (ans, args) =
     let ans1, ans2 = list_chop n ans in
     let args1, args2 = list_chop n args in
       (ans1, args1), (ans2, args2)
 
-  let concat_app_annot (ans1, args1) (ans2, args2) =
+  let concat_args (ans1, args1) (ans2, args2) =
     (Array.append ans1 ans2, Array.append args1 args2)
     
-  let concat_app_annot_list (ans1, args1) (ans2, args2) =
+  let concat_argsl (ans1, args1) (ans2, args2) =
     (ans1 @ ans2, args1 @ args2)
 
 end

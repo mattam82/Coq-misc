@@ -76,6 +76,7 @@ Section Equivalence.
 Theorem iff_refl : forall A, A <-> A.
   Proof.
     split; auto.
+Set Printing All.
 Show Proof.
   Qed.
 

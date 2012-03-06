@@ -461,13 +461,15 @@ let raw_inversion inv_kind id status names gl =
   check_no_metas indclause ccl;
   let IndType (indf,realargs) = find_rectype env sigma ccl in
   let (elim_predicate,neqns) =
-    make_inv_predicate env sigma indf realargs id status (pf_concl gl) in
+    make_inv_predicate env sigma indf (snd realargs) id status (pf_concl gl) in
+  let rel = Retyping.get_relevance_of env sigma t in
   let (cut_concl,case_tac) =
     if status <> NoDep & (dependent c (pf_concl gl)) then
-      Reduction.beta_appvect elim_predicate (Array.of_list (realargs@[c])),
+      Reduction.beta_app_argsl elim_predicate 
+      (Constr.concat_argsl realargs ([rel],[c])),
       case_then_using
     else
-      Reduction.beta_appvect elim_predicate (Array.of_list realargs),
+      Reduction.beta_app_argsl elim_predicate realargs,
       case_nodep_then_using
   in
   (tclTHENS

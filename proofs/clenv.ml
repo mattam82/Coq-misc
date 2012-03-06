@@ -87,7 +87,7 @@ let clenv_push_prod cl =
 let clenv_environments evd bound t =
   let rec clrec (e,metas) n t =
     match n, Constr.kind_of_term t with
-      | (Some 0, _) -> (e, List.rev metas, t)
+      | (Some 0, _) -> (e, List.split (List.rev metas), t)
       | (n, Constr.Cast (t,_,_)) -> clrec (e,metas) n t
       | (n, Constr.Prod ((na, (ann, _)),t1,t2)) ->
 	  let mv = new_meta () in
@@ -97,7 +97,7 @@ let clenv_environments evd bound t =
 	  clrec (e', (ann,mkMeta mv)::metas) (Option.map ((+) (-1)) n)
 	    (if dep then (subst1 (mkMeta mv) t2) else t2)
       | (n, Constr.LetIn (na,b,_,t)) -> clrec (e,metas) n (subst1 b t)
-      | (n, _) -> (e, List.rev metas, t)
+      | (n, _) -> (e, List.split (List.rev metas), t)
   in
   clrec (evd,[]) bound t
 
@@ -107,7 +107,7 @@ let clenv_environments evd bound t =
 let clenv_environments_evars env evd bound t =
   let rec clrec (e,ts) n t =
     match n, Constr.kind_of_term t with
-      | (Some 0, _) -> (e, List.rev ts, t)
+      | (Some 0, _) -> (e, List.split (List.rev ts), t)
       | (n, Constr.Cast (t,_,_)) -> clrec (e,ts) n t
       | (n, Constr.Prod ((na,(ann,_)),t1,t2)) ->
           let e',constr = Evarutil.new_evar e env t1 in
@@ -115,7 +115,7 @@ let clenv_environments_evars env evd bound t =
 	  clrec (e', (ann,constr)::ts) (Option.map ((+) (-1)) n)
 	    (if dep then (subst1 constr t2) else t2)
       | (n, Constr.LetIn (na,b,_,t)) -> clrec (e,ts) n (subst1 b t)
-      | (n, _) -> (e, List.rev ts, t)
+      | (n, _) -> (e, List.split (List.rev ts), t)
   in
   clrec (evd,[]) bound t
 
@@ -123,20 +123,18 @@ let clenv_conv_leq env sigma t c bound =
   let ty = Retyping.get_type_of env sigma c in
   let evd = Evd.create_goal_evar_defs sigma in
   let evars,args,_ = clenv_environments_evars env evd (Some bound) ty in
-  let rel = Retyping.get_relevance_of env evars ty in
-  let evars = Evarconv.the_conv_x_leq env t (Constr.recompose_app (rel,c) args) evars in
+  let evars = Evarconv.the_conv_x_leq env t (Constr.app_argslc c args) evars in
   let evars = Evarconv.consider_remaining_unif_problems env evars in
-  let args = List.map (fun t -> whd_evar evars (snd t)) args in
-  check_evars env sigma evars (applist (c,args));
+  let args = Constr.map_argsl (whd_evar evars) args in
+  check_evars env sigma evars (Constr.app_argsl (c,args));
   args
 
 let mk_clenv_from_env environ sigma n (c,cty) =
   let evd = create_goal_evar_defs sigma in
   let (evd,args,concl) = clenv_environments evd n cty in
   let term =
-    if args = [] then c else
-      let rel = Retyping.get_relevance_of environ evd concl in
-	Constr.recompose_app (rel, c) args
+    if Constr.is_empty_argsl args then c else
+      Constr.app_argslc c args
   in
   { templval = mk_freelisted term;
     templtyp = mk_freelisted concl;

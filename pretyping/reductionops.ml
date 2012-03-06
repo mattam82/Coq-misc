@@ -28,7 +28,7 @@ exception Elimconst
 (* The type of (machine) stacks (= lambda-bar-calculus' contexts)     *)
 
 type 'a stack_member =
-  | Zapp of 'a app_annot_list
+  | Zapp of 'a args_list
   | Zcase of case_info * 'a * 'a array
   | Zfix of 'a * 'a stack
   | Zshift of int
@@ -113,10 +113,10 @@ type  reduction_function =  contextual_reduction_function
 type local_reduction_function = evar_map -> constr -> constr
 
 type  contextual_stack_reduction_function =
-    env ->  evar_map -> constr -> constr application_list
+    env ->  evar_map -> constr -> constr * constr args_list
 type  stack_reduction_function =  contextual_stack_reduction_function
 type local_stack_reduction_function =
-    evar_map -> constr -> constr application_list
+    evar_map -> constr -> constr * constr args_list
 
 type  contextual_state_reduction_function =
     env ->  evar_map -> state -> state
@@ -146,8 +146,7 @@ let safe_meta_value sigma ev =
   with Not_found -> None
 
 let appterm_of_stack (f,s) = 
-  let (ans, args) = list_of_stack s in
-    (f,ans,args)
+  (f, list_of_stack s)
 
 let whd_stack sigma x =
   appterm_of_stack (whd_app_state sigma (x, empty_stack))
@@ -237,13 +236,16 @@ let rec stacklam recfun env t stack =
 let beta_applist (c,a,l) =
   stacklam app_stack [] c (append_stack_list a l empty_stack)
 
+let beta_applist_expl (c,l) =
+  beta_applist (c,list_make (List.length l) Expl, l)
+
 (* Iota reduction tools *)
 
 type 'a miota_args = {
   mP      : constr;     (* the result type *)
   mconstr : constr;     (* the constructor *)
   mci     : case_info;  (* special info to re-build pattern *)
-  mcargs  : 'a app_annot_list;    (* the constructor's arguments *)
+  mcargs  : 'a args_list;    (* the constructor's arguments *)
   mlf     : 'a array }  (* the branch code vector *)
 
 let reducible_mind_case c = match kind_of_term c with
@@ -830,8 +832,8 @@ let whd_betaiota_deltazeta_for_iota_state ts env sigma s =
     let (t, stack as s) = whd_betaiota_state sigma s in
     match kind_of_term t with
     | Case (ci,p,d,lf) ->
-        let (cr,crans,crargs) = whd_betadeltaiota_stack_using ts env sigma d in
-        let rslt = mkCase (ci, p, applist (cr,crans,crargs), lf) in
+        let (cr,crargs) = whd_betadeltaiota_stack_using ts env sigma d in
+        let rslt = mkCase (ci, p, app_argsl (cr,crargs), lf) in
         if reducible_mind_case cr then
 	  whrec (rslt, stack)
         else

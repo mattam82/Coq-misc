@@ -871,8 +871,8 @@ let make_projection sigma params cstr sign elim i n c =
   let elim = match elim with
   | NotADefinedRecordUseScheme elim ->
       (* bugs: goes from right to left when i increases! *)
-      let (na,b,t) = List.nth cstr.cs_args i in
-      let b = cata_body (fun b -> b) (mkRel (i+1)) b in
+      let (na,body,t) = List.nth cstr.cs_args i in
+      let b = cata_body (fun b -> b) (mkRel (i+1)) body in
       let branch = it_mkLambda_or_LetIn b cstr.cs_args in
       if
 	(* excludes dependent projection types *)
@@ -881,7 +881,8 @@ let make_projection sigma params cstr sign elim i n c =
 	&& not (isEvar (fst (whd_betaiota_stack sigma t)))
       then
         let t = lift (i+1-n) t in
-	Some (beta_applist (elim,params@[t;branch]),t)
+	let rel = annot_of_body body in
+	Some (rel, beta_applist (elim,(fst params@[Expl;rel]), snd params @ [t;branch]),t)
       else
 	None
   | DefinedRecord l ->
@@ -889,11 +890,13 @@ let make_projection sigma params cstr sign elim i n c =
       match List.nth l i with
       | Some proj ->
 	  let t = Typeops.type_of_constant (Global.env()) proj in
+	  let rel = Retyping.get_relevance_of (Global.env()) Evd.empty t in
 	  let args = extended_rel_vect 0 sign in
-	  Some (beta_applist (mkConst proj,params),prod_applist t (params@[mkApp (c,args)]))
+	  Some (rel, beta_applist (mkConst proj,fst params,snd params),
+		prod_applist t (snd params@[mkApp (c,args)]))
       | None -> None
-  in Option.map (fun (abselim,elimt) -> 
-    let c = beta_applist (abselim,[mkApp (c,extended_rel_vect 0 sign)]) in
+  in Option.map (fun (rel,abselim,elimt) -> 
+    let c = beta_applist (abselim,[rel],[mkApp (c,extended_rel_vect 0 sign)]) in
     (it_mkLambda_or_LetIn c sign, it_mkProd_or_LetIn elimt sign)) elim
 
 let descend_in_conjunctions tac exit c gl =
@@ -1146,17 +1149,20 @@ let specialize mopt (c,lbind) g =
       let flags = { default_unify_flags with resolve_evars = true } in
       let clause = clenv_unify_meta_types ~flags clause in
       let (thd,tstack) = whd_stack clause.evd (clenv_value clause) in
-      let nargs = List.length tstack in
+      let nargs = Constr.argsl_length tstack in
       let tstack = match mopt with
 	| Some m ->
-	    if m < nargs then list_firstn m tstack else tstack
+	    if m < nargs then Constr.argsl_firstn m tstack else tstack
 	| None ->
 	    let rec chk = function
-	      | [] -> []
-	      | t::l -> if occur_meta t then [] else t :: chk l
+	      | [],[] -> [],[]
+	      | (a::ans),(t::l) -> if occur_meta t then ([],[]) else
+		  let ans,r = chk (ans,l) in
+		    a::ans, t::r
+	      | _,_ -> assert false
 	    in chk tstack
       in
-      let term = applist(thd,List.map (nf_evar clause.evd) tstack) in
+      let term = Constr.app_argsl (thd,Constr.map_argsl (nf_evar clause.evd) tstack) in
       if occur_meta term then
 	errorlabstrm "" (str "Cannot infer an instance for " ++
           pr_name (meta_name clause.evd (List.hd (collect_metas term))) ++

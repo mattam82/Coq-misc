@@ -152,9 +152,12 @@ let compute_first_inversion_scheme env sigma ind sort dep_option =
   let pty,goal =
     if dep_option  then
       let pty = make_arity env true indf sort in
+      let rel = Retyping.get_relevance_of env sigma pty in
       let goal =
 	mkProd
-	  (Anonymous, mkAppliedInd ind, applist(mkVar p,realargs@[mkRel 1]))
+	  (Anonymous, mkAppliedInd ind, 
+	   Constr.app_argsl(mkVar p,
+			    Constr.concat_argsl realargs ([rel],[mkRel 1])))
       in
       pty,goal
     else

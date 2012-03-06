@@ -131,7 +131,7 @@ let solve_pattern_eqn_array (env,nb) f l c (sigma,metasubst,evarsubst) =
 	let pb = (Conv,TypeNotProcessed) in
 	  if noccur_between 1 nb c then
             sigma,(k,lift (-nb) c,pb)::metasubst,evarsubst
-	  else error_cannot_unify_local env sigma (applist (f, l),c,c)
+	  else error_cannot_unify_local env sigma (app_argsl (f, l),c,c)
     | Evar ev ->
 	let sigma,c = pose_all_metas_as_evars env sigma c in
 	sigma,metasubst,(env,ev,solve_pattern_eqn env l c)::evarsubst
@@ -355,7 +355,7 @@ let oracle_order env cf1 cf2 =
 let do_reduce ts (env, nb) sigma c =
   let (t, stack') = whd_betaiota_deltazeta_for_iota_state ts env sigma (c, empty_stack) in
   let l = list_of_stack stack' in
-    applist (t, l)
+    app_argsl (t, l)
 
 let use_full_betaiota flags =
   flags.modulo_betaiota && Flags.version_strictly_greater Flags.V8_3
@@ -449,10 +449,10 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
         (* eta-expansion *)
 	| Lambda (na,t1,c1), _ when flags.modulo_eta ->
 	    unirec_rec (push (na,t1) curenvnb) CONV true wt substn
-	      c1 (mkApp (lift 1 cN,(Expl,[|Expl|]),[|mkRel 1|]))
+	      c1 (mkApp (lift 1 cN,[|annot_of na|],[|mkRel 1|]))
 	| _, Lambda (na,t2,c2) when flags.modulo_eta ->
 	    unirec_rec (push (na,t2) curenvnb) CONV true wt substn
-	      (mkApp (lift 1 cM,(Expl,[|Expl|]),[|mkRel 1|])) c2
+	      (mkApp (lift 1 cM,[|annot_of na|],[|mkRel 1|])) c2
 
 	| Case (_,p1,c1,cl1), Case (_,p2,c2,cl2) ->
             (try 
@@ -467,7 +467,8 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	    (isMeta f1 && use_metas_pattern_unification flags nb l1
             || use_evars_pattern_unification flags && isAllowedEvar flags f1) ->
             (match
-                is_unification_pattern curenvnb sigma f1 (Array.to_list l1) cN
+                is_unification_pattern curenvnb sigma f1
+		  (Array.to_list ann1, Array.to_list l1) cN
              with
              | None ->
                  (match kind_of_term cN with
@@ -481,7 +482,8 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	    (isMeta f2 && use_metas_pattern_unification flags nb l2
             || use_evars_pattern_unification flags && isAllowedEvar flags f2) ->
             (match
-                is_unification_pattern curenvnb sigma f2 (Array.to_list l2) cM
+                is_unification_pattern curenvnb sigma f2 
+		(Array.to_list ann2, Array.to_list l2) cM
              with
              | None ->
                  (match kind_of_term cM with
@@ -516,9 +518,9 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
     try reduce curenvnb pb b wt substn cM cN
     with ex when precatchable_exception ex ->
     let (f1,ann1,l1) =
-      match kind_of_term cM with App (f,ann,l) -> (f,ann,l) | _ -> (cM,(Expl,[||]),[||]) in
+      match kind_of_term cM with App (f,ann,l) -> (f,ann,l) | _ -> (cM,[||],[||]) in
     let (f2,ann2,l2) =
-      match kind_of_term cN with App (f,ann,l) -> (f,ann,l) | _ -> (cN,(Expl,[||]),[||]) in
+      match kind_of_term cN with App (f,ann,l) -> (f,ann,l) | _ -> (cN,[||],[||]) in
     expand curenvnb pb b wt substn cM f1 ann1 l1 cN f2 ann2 l2
 
   and reduce curenvnb pb b wt (sigma, metas, evars as substn) cM cN =
@@ -601,9 +603,9 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
   and canonical_projections curenvnb pb b cM cN (sigma,_,_ as substn) =
     let f1 () =
       if isApp cM then
-	let f1l1 = Term.decompose_app cM in
+	let f1l1 = decompose_app_argsl cM in
 	  if is_open_canonical_projection env sigma f1l1 then
-	    let f2l2 = Term.decompose_app cN in
+	    let f2l2 = decompose_app_argsl cN in
 	      solve_canonical_projection curenvnb pb b cM f1l1 cN f2l2 substn
 	  else error_cannot_unify (fst curenvnb) sigma (cM,cN)
       else error_cannot_unify (fst curenvnb) sigma (cM,cN)
@@ -614,15 +616,15 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
       else
 	try f1 () with e when precatchable_exception e ->
 	  if isApp cN then
-	    let f2l2 = Term.decompose_app cN in
+	    let f2l2 = decompose_app_argsl cN in
 	      if is_open_canonical_projection env sigma f2l2 then
-		let f1l1 = Term.decompose_app cM in
+		let f1l1 = decompose_app_argsl cM in
 		  solve_canonical_projection curenvnb pb b cN f2l2 cM f1l1 substn
 	      else error_cannot_unify (fst curenvnb) sigma (cM,cN)
 	  else error_cannot_unify (fst curenvnb) sigma (cM,cN)
 
   and solve_canonical_projection curenvnb pb b cM f1l1 cN f2l2 (sigma,ms,es) =
-    let (c,bs,(params,params1),(us,us2),(ts,ts1),c1,(n,t2)) =
+    let (c,bs,(params,params1),(us,us2),(ts,ts1),(an1,c1),(n,t2)) =
       try Evarconv.check_conv_record f1l1 f2l2
       with Not_found -> error_cannot_unify (fst curenvnb) sigma (cM,cN)
     in
@@ -633,10 +635,10 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
             let mv = new_meta () in
 	    let evd' = meta_declare mv (substl ks b) evd in
 	      (evd', mkMeta mv :: ks, m - 1))
-	(sigma,[],List.length bs - 1) bs
+	(sigma,[], argsl_length bs - 1) (snd bs)
     in
     let unilist2 f substn l l' =
-      try List.fold_left2 f substn l l'
+      try List.fold_left2 f substn (snd l) (snd l')
       with Invalid_argument "List.fold_left2" -> error_cannot_unify (fst curenvnb) sigma (cM,cN)
     in
     let substn = unilist2 (fun s u1 u -> unirec_rec curenvnb pb b false s u1 (substl ks u))
@@ -644,7 +646,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
     let substn = unilist2 (fun s u1 u -> unirec_rec curenvnb pb b false s u1 (substl ks u))
       substn params1 params in
     let substn = unilist2 (unirec_rec curenvnb pb b false) substn ts ts1 in
-      unirec_rec curenvnb pb b false substn c1 (applist (c,(List.rev ks)))
+      unirec_rec curenvnb pb b false substn c1 (app_argsl (c,(fst bs, List.rev ks)))
 
   in
   let evd = sigma in
@@ -680,12 +682,12 @@ let rec unify_with_eta keptside flags env sigma c1 c2 =
     let env' = push_rel_assum (na,t) env in
     let side = left in (* expansion on the right: we keep the left side *)
       unify_with_eta side flags env' sigma
-      c1' (mkApp (lift 1 c2,(Expl,[|rel|]),[|mkRel 1|]))
+      c1' (mkApp (lift 1 c2,[|rel|],[|mkRel 1|]))
   | (_,Lambda ((_, (rel,_)) as na,t,c2')) ->
     let env' = push_rel_assum (na,t) env in
     let side = right in (* expansion on the left: we keep the right side *)
       unify_with_eta side flags env' sigma
-      (mkApp (lift 1 c1,(Expl,[|rel|]),[|mkRel 1|])) c2'
+      (mkApp (lift 1 c1,[|rel|],[|mkRel 1|])) c2'
   | _ ->
     (keptside,unify_0 env sigma CONV flags c1 c2)
     
@@ -779,7 +781,7 @@ let applyHead env evd n c  =
       | Prod (na,c1,c2) ->
         let (evd',evar) =
 	  Evarutil.new_evar evd env ~src:(dummy_loc,GoalEvar) c1 in
-	  apprec (n-1) (mkApp(c,(Expl,[|relevance_of na|]),[|evar|])) (subst1 evar c2) evd'
+	  apprec (n-1) (mkApp(c,[|annot_of na|],[|evar|])) (subst1 evar c2) evd'
       | _ -> error "Apply_Head_Then"
   in
     apprec n c (Typing.type_of env evd c) evd
@@ -991,14 +993,14 @@ let w_typed_unify env evd = w_unify_core_0 env evd true
 
 let w_typed_unify_list env evd flags f1 l1 f2 l2 =
   let flags' = { flags with resolve_evars = false } in
-  let f1,l1,f2,l2 = adjust_app_list_size f1 l1 f2 l2 in
+  let f1,l1,f2,l2 = adjust_app_list_size f1 (snd l1) f2 (snd l2) in
   let (mc1,evd') = retract_coercible_metas evd in
   let subst =
     List.fold_left2 (fun subst m n ->
       unify_0_with_initial_metas subst true env CONV flags' m n) (evd',[],[])
       (f1::l1) (f2::l2) in
   let evd = w_merge env true flags subst in
-  try_resolve_typeclasses env evd flags (applist(f1,l1)) (applist(f2,l2))
+  try_resolve_typeclasses env evd flags (Term.applist(f1,l1)) (Term.applist(f2,l2))
 
 (* takes a substitution s, an open term op and a closed term cl
    try to find a subterm of cl which matches op, if op is just a Meta
@@ -1187,10 +1189,10 @@ let w_unify2 env evd flags dep cv_pb ty1 ty2 =
   match kind_of_term c1, kind_of_term c2 with
     | Meta p1, _ ->
         (* Find the predicate *)
-        secondOrderAbstractionAlgo dep env evd flags ty2 (p1,oplist1)
+        secondOrderAbstractionAlgo dep env evd flags ty2 (p1,snd oplist1)
     | _, Meta p2 ->
         (* Find the predicate *)
-        secondOrderAbstractionAlgo dep env evd flags ty1 (p2, oplist2)
+        secondOrderAbstractionAlgo dep env evd flags ty1 (p2,snd oplist2)
     | _ -> error "w_unify2"
 
 (* The unique unification algorithm works like this: If the pattern is
@@ -1216,10 +1218,11 @@ let w_unify2 env evd flags dep cv_pb ty1 ty2 =
 let w_unify env evd cv_pb ?(flags=default_unify_flags) ty1 ty2 =
   let hd1,l1 = whd_stack evd ty1 in
   let hd2,l2 = whd_stack evd ty2 in
-    match kind_of_term hd1, l1<>[], kind_of_term hd2, l2<>[] with
+    match kind_of_term hd1, not (is_empty_argsl l1), kind_of_term hd2, not (is_empty_argsl l2)
+    with
       (* Pattern case *)
       | (Meta _, true, Lambda _, _ | Lambda _, _, Meta _, true)
-	  when List.length l1 = List.length l2 ->
+	  when argsl_length l1 = argsl_length l2 ->
 	  (try
 	      w_typed_unify_list env evd flags hd1 l1 hd2 l2
 	    with ex when precatchable_exception ex ->

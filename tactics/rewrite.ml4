@@ -471,7 +471,7 @@ let rec decomp_pointwise n c =
     | App (f, [| a; b; relb |]) when eq_constr f (Lazy.force pointwise_relation) ->
 	decomp_pointwise (pred n) relb
     | App (f, [| a; b; arelb |]) when eq_constr f (Lazy.force forall_relation) ->
-	decomp_pointwise (pred n) (Reductionops.beta_applist (arelb, [mkRel 1]))
+	decomp_pointwise (pred n) (Reductionops.beta_applist (arelb, [Expl], [mkRel 1]))
     | _ -> raise (Invalid_argument "decomp_pointwise")
 	
 let rec apply_pointwise rel = function
@@ -480,7 +480,7 @@ let rec apply_pointwise rel = function
       | App (f, [| a; b; relb |]) when eq_constr f (Lazy.force pointwise_relation) ->
 	  apply_pointwise relb args
       | App (f, [| a; b; arelb |]) when eq_constr f (Lazy.force forall_relation) ->
-	  apply_pointwise (Reductionops.beta_applist (arelb, [arg])) args
+	  apply_pointwise (Reductionops.beta_applist (arelb, [Expl], [arg])) args
       | _ -> raise (Invalid_argument "apply_pointwise"))
   | [] -> rel
 
@@ -678,11 +678,13 @@ open Elimschemes
 let reset_env env =
   let env' = Global.env_of_context (Environ.named_context_val env) in
     Environ.push_rel_context (Environ.rel_context env) env'
+
+let (@@) = Constr.concat_argsl
       
 let fold_match ?(force=false) env sigma c =
   let (ci, p, c, brs) = destCase c in
   let cty = Retyping.get_type_of env sigma c in
-  let dep, pred, exists, sk = 
+  let dep, pred, exists, sortp, sortc, sk = 
     let env', ctx, body =
       let ctx, pred = decompose_lam_assum p in
       let env' = Environ.push_rel_context ctx env in
@@ -710,14 +712,19 @@ let fold_match ?(force=false) env sigma c =
     in 
     let exists = Ind_tables.check_scheme sk ci.ci_ind in
       if exists || force then
-	dep, pred, exists, Ind_tables.find_scheme sk ci.ci_ind
+	dep, pred, exists, sortp, sortc, Ind_tables.find_scheme sk ci.ci_ind
       else raise Not_found
   in
   let app =
+    let irrp = relevance_of_sorts_family sortp 
+    and irrc = relevance_of_sorts_family sortc in
     let ind, args = Inductive.find_rectype env cty in
-    let pars, args = list_chop ci.ci_npar args in
+    let pars, args = Constr.chop_argsl ci.ci_npar args in
     let meths = List.map (fun br -> br) (Array.to_list brs) in
-      applist (mkConst sk, pars @ [pred] @ meths @ args @ [c])
+    let methsann = list_make (List.length meths) irrp in
+      Constr.app_argsl (mkConst sk, 
+		 pars @@ ([Expl],[pred]) @@ 
+		 (methsann, meths) @@ args @@ ([irrc],[c]))
   in 
     sk, (if exists then env else reset_env env), app
       

@@ -103,13 +103,14 @@ let e_is_correct_arity env evdref c pj ind specif params =
 let e_type_case_branches env evdref (ind,largs) pj c =
   let specif = lookup_mind_specif env ind in
   let nparams = inductive_params specif in
-  let (params,realargs) = list_chop nparams largs in
+  let (params,realargs) = chop_argsl nparams largs in
   let p = pj.uj_val in
   let univ = e_is_correct_arity env evdref c pj ind specif params in
   let lc = build_branches_type ind specif params p in
   let n = (snd specif).Declarations.mind_nrealargs_ctxt in
   let ty =
-    whd_betaiota !evdref (Reduction.betazeta_appvect (n+1) p (Array.of_list (realargs@[c]))) in
+    whd_betaiota !evdref (Reduction.betazeta_app_argsl (n+1) p 
+			  (concat_argsl realargs ([Expl],[c]))) in
   (lc, ty, univ)
 
 let e_judge_of_case env evdref ci pj cj lfj =

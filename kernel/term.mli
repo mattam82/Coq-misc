@@ -74,8 +74,8 @@ type 'a letbinder_annot = 'a * annot
 type 'a application = 'a * annot array * 'a array
 type 'a application_list = 'a * annot list * 'a list
 
-type 'a app_annot = annot array * 'a array
-type 'a app_annot_list = annot list * 'a list
+type 'a args = annot array * 'a array
+type 'a args_list = annot list * 'a list
 
 val relevance_of_sort : sorts -> relevance
 val relevance_of_sorts_family : sorts_family -> relevance
@@ -246,18 +246,20 @@ module Constr : sig
   val decompose_app : constr -> constr application_list
   val recompose_app : constr -> (annot * constr) list -> constr
       
-  val map_app_annot : ('a -> 'b) -> 'a app_annot -> 'b app_annot
-  val map_app_annot_list : ('a -> 'b) -> 'a app_annot_list -> 'b app_annot_list
-    
-  val app_annot : constr -> constr app_annot -> constr
-  val app_annot_list : constr -> constr app_annot_list -> constr
-    
-  val decompose_app_annot : constr -> constr * constr app_annot_list
+  val map_args : ('a -> 'b) -> 'a args -> 'b args    
+  val app_args : (constr * constr args) -> constr    
+  val concat_args : 'a args -> 'a args -> 'a args
 
-  val chop_app_annot_list : int -> 'a app_annot_list -> 'a app_annot_list * 'a app_annot_list
-    
-  val concat_app_annot : 'a app_annot -> 'a app_annot -> 'a app_annot
-  val concat_app_annot_list : 'a app_annot_list -> 'a app_annot_list -> 'a app_annot_list
+  val decompose_app_argsl : constr -> constr * constr args_list
+  val chop_argsl : int -> 'a args_list -> 'a args_list * 'a args_list
+  val map_argsl : ('a -> 'b) -> 'a args_list -> 'b args_list
+  val app_argslc : constr -> constr args_list -> constr
+  val app_argsl : (constr * constr args_list) -> constr
+  val concat_argsl : 'a args_list -> 'a args_list -> 'a args_list
+  val is_empty_argsl : 'a args_list -> bool
+  val argsl_length : 'a args_list -> int
+  val argsl_skipn : int -> 'a args_list -> 'a args_list
+  val argsl_firstn : int -> 'a args_list -> 'a args_list
 
   val applist : constr application_list -> constr
   val applistc : constr -> annot list -> constr list -> constr
@@ -520,8 +522,8 @@ val applistc : constr -> constr list -> constr
 val appvect : constr * constr array -> constr
 val appvectc : constr -> constr array -> constr
 
-val extended_rel_applist : int -> rel_context -> constr app_annot_list
-val extended_rel_appvect : int -> rel_context -> constr app_annot
+val extended_rel_applist : int -> rel_context -> constr args_list
+val extended_rel_appvect : int -> rel_context -> constr args
 
 (** [prodn n l b] = [forall (x_1:T_1)...(x_n:T_n), b]
    where [l] is [(x_n,T_n)...(x_1,T_1)...]. *)

@@ -105,7 +105,7 @@ let beta_appvect c v =
       | _ -> applist (substl env t, stack) in
   stacklam [] c (Array.to_list v)
 
-let beta_app_annot c (ans, args) =
+let beta_app_argsl c (ans, args) =
   let rec stacklam env t ans args =
     match t, ans, args with
         Lambda(_,_,c), _ :: ans, arg::args -> stacklam (arg::env) c ans args

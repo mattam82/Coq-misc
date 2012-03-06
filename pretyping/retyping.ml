@@ -62,9 +62,9 @@ let retype ?(polyprop=true) sigma =
         let Inductiveops.IndType(_,realargs) =
           try Inductiveops.find_rectype env sigma (type_of env c)
           with Not_found -> anomaly "type_of: Bad recursive type" in
-        let t = whd_beta sigma (applist (p, realargs)) in
+        let t = whd_beta sigma (app_argslc p realargs) in
         (match kind_of_term (whd_betadeltaiota env sigma (type_of env t)) with
-          | Prod _ -> whd_beta sigma (applist (t, [c]))
+          | Prod ((_, (ann, _)), _, _) -> whd_beta sigma (app_argslc t ([ann],[c]))
           | _ -> t)
     | Lambda (name,c1,c2) ->
           mkProd (name, c1, type_of (push_rel (var_decl_of name c1) env) c2)
@@ -178,4 +178,4 @@ let get_assumption_of env evc c = c
 let get_judgment_of env evc c = { uj_val = c; uj_type = get_type_of env evc c }
 
 let get_relevance_of ?(polyprop=true) env sigma t =
-  Typeops.relevance_of_sorts_family (get_sort_family_of ~polyprop env sigma t)
+  relevance_of_sorts_family (get_sort_family_of ~polyprop env sigma t)

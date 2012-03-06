@@ -1344,10 +1344,12 @@ let whd_head_evar_stack sigma c =
 let whd_head_evar sigma c = applist (whd_head_evar_stack sigma c)
 
 let rec expand_and_check_vars aliases = function
-  | [] -> []
-  | a::l when isRel a or isVar a ->
+  | [], [] -> [], []
+  | an :: ans, a::l when isRel a or isVar a ->
       let a = expansion_of_var aliases a in
-      if isRel a or isVar a then a :: expand_and_check_vars aliases l
+      if isRel a or isVar a then
+	let ans, args = expand_and_check_vars aliases (ans,l) in
+	  an :: ans, a :: args
       else raise Exit
   | _ ->
       raise Exit
@@ -1383,19 +1385,21 @@ let get_actual_deps aliases l t =
 let remove_instance_local_defs evd evk args =
   let evi = Evd.find evd evk in
   let rec aux = function
-  | (_,b,_)::sign, a::args when is_variable_body b -> a::aux (sign,args)
-  | (_,_,_)::sign, a::args -> aux (sign,args)
-  | [], [] -> []
+  | (_,Variable (an, _),_)::sign, a::args ->
+    let ans, args' = aux (sign,args) in
+      an :: ans, a :: args'
+  | (_,b,_)::sign, a::args -> aux (sign,args)
+  | [], [] -> [], []
   | _ -> assert false in
   aux (evar_filtered_context evi, args)
 
 (* Check if an applied evar "?X[args] l" is a Miller's pattern *)
 
 let find_unification_pattern_args env l t =
-  if List.for_all (fun x -> isRel x || isVar x) l (* common failure case *) then
+  if List.for_all (fun x -> isRel x || isVar x) (snd l) (* common failure case *) then
     let aliases = make_alias_map env in
     match (try Some (expand_and_check_vars aliases l) with Exit -> None) with
-    | Some l as x when constr_list_distinct (get_actual_deps aliases l t) -> x
+    | Some l as x when constr_list_distinct (get_actual_deps aliases (snd l) t) -> x
     | _ -> None
   else
     None
@@ -1403,7 +1407,7 @@ let find_unification_pattern_args env l t =
 let is_unification_pattern_meta env nb m l t =
   (* Variables from context and rels > nb are implicitly all there *)
   (* so we need to be a rel <= nb *)
-  if List.for_all (fun x -> isRel x && destRel x <= nb) l then
+  if List.for_all (fun x -> isRel x && destRel x <= nb) (snd l) then
     match find_unification_pattern_args env l t with
     | Some _ as x when not (dependent (mkMeta m) t) -> x
     | _ -> None
@@ -1411,11 +1415,11 @@ let is_unification_pattern_meta env nb m l t =
     None
 
 let is_unification_pattern_evar env evd (evk,args) l t =
-  if List.for_all (fun x -> isRel x || isVar x) l (* common failure case *) then
+  if List.for_all (fun x -> isRel x || isVar x) (snd l) (* common failure case *) then
     let args = remove_instance_local_defs evd evk (Array.to_list args) in
-    let n = List.length args in
-    match find_unification_pattern_args env (args @ l) t with
-    | Some l when not (occur_evar evk t) -> Some (list_skipn n l)
+    let n = Constr.argsl_length args in
+    match find_unification_pattern_args env (Constr.concat_argsl args l) t with
+    | Some l when not (occur_evar evk t) -> Some (Constr.argsl_skipn n l)
     | _ -> None
   else
     None
@@ -1444,7 +1448,7 @@ let solve_pattern_eqn env l c =
       | Var id ->
           let d = lookup_named id env in mkNamedLambda_or_LetIn d c'
       | _ -> assert false)
-    l c in
+    (snd l) c in
   (* Warning: we may miss some opportunity to eta-reduce more since c'
      is not in normal form *)
   whd_eta c'

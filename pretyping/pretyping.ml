@@ -137,7 +137,7 @@ let solve_remaining_evars fail_evar use_classes hook env initial_sigma (evd,c) =
 
 let get_relevance_of env sigma ty = 
   let s = Retyping.get_sort_family_of env sigma ty in
-    Typeops.relevance_of_sorts_family s
+    relevance_of_sorts_family s
       
 module type S =
 sig
@@ -467,7 +467,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
       		match Constr.kind_of_term resty with
 		  | Constr.Prod ((na,(rel,_)),c1,c2) ->
 		      let hj, relc = pretype (mk_tycon c1) env evdref lvar c in
-		      let value, typ = Constr.mkApp (j_val resj, (relf, [|relc|]), [|j_val hj|]), 
+		      let value, typ = Constr.mkApp (j_val resj, [|relc|], [|j_val hj|]), 
 			subst1 hj.uj_val c2 in
 			apply_rec env (n+1)
 			  { uj_val = value;
@@ -573,7 +573,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 		     let psign = make_arity_signature env true indf in (* with names *)
 		     let p = it_mkLambda_or_LetIn ccl psign in
 		     let inst =
-		       (Array.to_list cs.cs_concl_realargs)
+		       (Array.to_list (snd cs.cs_concl_realargs))
 		       @[build_dependent_constructor cs] in
 		     let lp = lift cs.cs_nargs p in
 		     let fty = hnf_lam_applist env !evdref lp inst in
@@ -584,7 +584,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 		       let ci = make_case_info env ind LetStyle in
 		       Typing.check_allowed_sort env !evdref ind cj.uj_val p;
 		       mkCase (ci, p, cj.uj_val,[|f|]) in
-		     { uj_val = v; uj_type = substl (realargs@[cj.uj_val]) ccl }, rel 
+		     { uj_val = v; uj_type = substl (snd realargs@[cj.uj_val]) ccl }, rel 
 
 		 | None ->
 		     let tycon = lift_tycon cs.cs_nargs tycon in
@@ -633,7 +633,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 		let pj, prel = pretype_type empty_valcon env_p evdref lvar p in
 		let ccl = nf_evar !evdref pj.utj_val in
 		let pred = it_mkLambda_or_LetIn ccl psign in
-		let typ = lift (- nar) (beta_applist (pred,[cj.uj_val])) in
+		let typ = lift (- nar) (beta_applist (pred,[crel],[cj.uj_val])) in
 	        pred, typ
 	    | None ->
 		let p = match tycon with
@@ -647,7 +647,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	  let f cs b =
 	    let n = rel_context_length cs.cs_args in
 	    let pi = lift n pred in (* liftn n 2 pred ? *)
-	    let pi = beta_applist (pi, [build_dependent_constructor cs]) in
+	    let pi = beta_applist (pi, [Expl], [build_dependent_constructor cs]) in
 	    let csgn =
 	      if not !allow_anonymous_refs then
 		List.map (fun (_,b,t) -> (Anonymous,b,t)) cs.cs_args

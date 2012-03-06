@@ -282,25 +282,25 @@ let inductive_template evdref env tmloc ind =
   let hole_source = match tmloc with
     | Some loc -> fun i -> (loc, TomatchTypeParameter (ind,i))
     | None -> fun _ -> (dummy_loc, InternalHole) in
-   let (_,evarl,_) =
+   let (_,annl,evarl,_) =
     List.fold_right
-      (fun (na,b,ty) (subst,evarl,n) ->
+      (fun (na,b,ty) (subst,annl,evarl,n) ->
 	match b with
-        | Variable _ ->
+        | Variable (ann, _) ->
 	    let ty' = substl subst ty in
 	    let e = e_new_evar evdref env ~src:(hole_source n) ty' in
-	    (e::subst,e::evarl,n+1)
+	    (e::subst,ann::annl,e::evarl,n+1)
 	| Definition (_, b) ->
-	    (substl subst b::subst,evarl,n+1))
-      arsign ([],[],1) in
-   applist (mkInd ind,List.rev evarl)
+	    (substl subst b::subst,annl,evarl,n+1))
+      arsign ([],[],[],1) in
+   app_argsl (mkInd ind,(List.rev annl,List.rev evarl))
 
 let try_find_ind env sigma typ realnames =
   let (IndType(indf,realargs) as ind) = find_rectype env sigma typ in
   let names =
     match realnames with
       | Some names -> names
-      | None -> list_make (List.length realargs) Anonymous in
+      | None -> list_make (argsl_length realargs) Anonymous in
   let arity,s = get_arity env indf in
   IsInd (typ,relevance_of_sorts_family s,ind,names)
 
@@ -312,7 +312,7 @@ let inh_coerce_to_ind evdref env ty tyi =
 
 let binding_vars_of_inductive = function
   | NotInd _ -> []
-  | IsInd (_,_,IndType(_,realargs),_) -> List.filter isRel realargs
+  | IsInd (_,_,IndType(_,realargs),_) -> List.filter isRel (snd realargs)
 
 let extract_inductive_data env sigma (_,b,t) =
   if not (is_variable_body b) then (NotInd (None,t),[]) else
@@ -818,7 +818,7 @@ let specialize_predicate_var (cur,typ,dep) tms ccl =
   let c = if dep<>Anonymous then Some cur else None in
   let l =
     match typ with
-    | IsInd (_,_,IndType(_,realargs),names) -> if names<>[] then realargs else []
+    | IsInd (_,_,IndType(_,realargs),names) -> if names<>[] then snd realargs else []
     | NotInd _ -> [] in
   subst_predicate (l,c) ccl tms
 
@@ -861,7 +861,7 @@ let rec extract_predicate ccl = function
       let pred = extract_predicate ccl tms in
       if na<>Anonymous then subst1 cur pred else pred
   | Pushed ((cur,IsInd (_,_,IndType(_,realargs),_)),_,na)::tms ->
-      let realargs = List.rev realargs in
+      let realargs = List.rev (snd realargs) in
       let k = if na<>Anonymous then 1 else 0 in
       let tms = lift_tomatch_stack (List.length realargs + k) tms in
       let pred = extract_predicate ccl tms in
@@ -960,7 +960,7 @@ let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
   (* We prepare the substitution of X and x:I(X) *)
   let realargsi =
     if nrealargs <> 0 then
-      adjust_subst_to_rel_context arsign (Array.to_list cs.cs_concl_realargs)
+      adjust_subst_to_rel_context arsign (Array.to_list (snd cs.cs_concl_realargs))
     else
       [] in
   let copti =
@@ -976,9 +976,10 @@ let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
   snd (List.fold_left (expand_arg tms) (1,ccl''') newtomatchs)
 
 let find_predicate loc env evdref p current (IndType (indf,realargs)) dep tms =
+  let realargs = snd realargs in
   let pred = abstract_predicate env !evdref indf current realargs dep tms p in
   (pred, whd_betaiota !evdref
-           (applist (pred, realargs@[current])))
+           (Term.applist (pred, realargs@[current])))
 
 (* Take into account that a type has been discovered to be inductive, leading
    to more dependencies in the predicate if the type has indices *)
@@ -1028,14 +1029,15 @@ let ungeneralize_branch n k (sign,body) cs =
 
 let postprocess_dependencies evd tocheck brs tomatch pred deps cs =
   let rec aux k brs tomatch pred tocheck deps = match deps, tomatch with
-  | [], _ -> brs,tomatch,pred,[]
+  | [], _ -> brs,tomatch,pred,([],[])
   | n::deps, Abstract (i,d) :: tomatch ->
       let d = map_rel_declaration (nf_evar evd) d in
       if List.exists (fun c -> dependent_in_decl (lift k c) d) tocheck 
 	|| not (is_variable_body (pi2 d)) then
         (* Dependency in the current term to match and its dependencies is real *)
         let brs,tomatch,pred,inst = aux (k+1) brs tomatch pred (mkRel n::tocheck) deps in
-        let inst = if is_variable_body (pi2 d) then mkRel n::inst else inst in
+        let inst = if is_variable_body (pi2 d) then 
+	  (annot_of_body (pi2 d) :: fst inst), (mkRel n::snd inst) else inst in
         brs, Abstract (i,d) :: tomatch, pred, inst
       else
         (* Finally, no dependency remains, so, we can replace the generalized *)
@@ -1113,6 +1115,7 @@ let build_leaf pb =
 
 (* Build the sub-pattern-matching problem for a given branch "C x1..xn as x" *)
 let build_branch current realargs deps (realnames,curname) pb arsign eqns const_info =
+  let realargs = snd realargs in (* FIXME *)
   (* We remember that we descend through constructor C *)
   let history =
     push_history_pattern const_info.cs_nargs const_info.cs_cstr pb.history in
@@ -1156,7 +1159,7 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
   (* Gamma;x1..xn;curalias:I(x1..xn) |- PI tms'. pred'                *)
   (* where, in tms and pred, those realargs that are vars are         *)
   (* replaced by the corresponding xi and cur replaced by curalias    *)
-  let cirealargs = Array.to_list const_info.cs_concl_realargs in
+  let cirealargs = Array.to_list (snd const_info.cs_concl_realargs) in
 
   (* Do the specialization for terms to match *)
   let tomatch = List.fold_right2 (fun par arg tomatch ->
@@ -1190,9 +1193,9 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
     else
       let cur_alias = lift const_info.cs_nargs current in
       let ind =
-        appvect (
-          applist (mkInd (inductive_of_constructor const_info.cs_cstr),
-                   List.map (lift const_info.cs_nargs) const_info.cs_params),
+        app_args (
+          app_argsl (mkInd (inductive_of_constructor const_info.cs_cstr),
+                   map_argsl (lift const_info.cs_nargs) const_info.cs_params),
           const_info.cs_concl_realargs) in
       Alias (aliasname,cur_alias,(ci,ind)) in
 
@@ -1268,8 +1271,8 @@ and match_current pb tomatch =
 	  let pred = nf_betaiota !(pb.evdref) pred in
 	  let case = mkCase (ci,pred,current,brvals) in
 	  Typing.check_allowed_sort pb.env !(pb.evdref) mind current pred;
-	  { uj_val = applist (case, inst);
-	    uj_type = prod_applist typ inst }
+	  { uj_val = app_argsl (case, inst);
+	    uj_type = prod_applist typ (snd inst) }
 
 (* Building the sub-problem when all patterns are variables *)
 and shift_problem ((current,t),_,na) pb =
@@ -1306,7 +1309,7 @@ and compile_generalization pb i d rest =
 and compile_alias pb (na,orig,(expanded,expanded_typ)) rest =
   let f c t =
     let sort = Retyping.get_sort_family_of pb.env !(pb.evdref) t in
-    let rel = Typeops.relevance_of_sorts_family sort in
+    let rel = relevance_of_sorts_family sort in
     let alias = def_decl_of (na, rel) c t in
     let pb =
       { pb with
@@ -1541,12 +1544,12 @@ let build_inversion_problem loc env sigma tms t =
     match tms with
     | [] -> [], acc_sign, acc
     | (t, IsInd (_,_,IndType(indf,realargs),_)) :: tms ->
-	let patl,acc = list_fold_map' reveal_pattern realargs acc in
+	let patl,acc = list_fold_map' reveal_pattern (snd realargs) acc in
 	let pat,acc = make_patvar t acc in
 	let indf' = lift_inductive_family n indf in
 	let sign = make_arity_signature env true indf' in
 	let sign = recover_alias_names alias_of_pat (pat :: List.rev patl) sign in
-	let p = List.length realargs in
+	let p = argsl_length realargs in
 	let env' = push_rels sign env in
 	let patl',acc_sign,acc = aux (n+p+1) env' (sign@acc_sign) tms acc in
 	patl@pat::patl',acc_sign,acc
@@ -1666,7 +1669,7 @@ let extract_arity_signature env0 tomatchl tmsign =
 		      anomaly "Ill-formed 'in' clause in cases";
 		  List.rev realnal
 	      | None -> list_make nrealargs_ctxt Anonymous in
-	  let binder = (na, (Typeops.relevance_of_sorts_family s, false)) in
+	  let binder = (na, (relevance_of_sorts_family s, false)) in
 	    (var_decl_of binder (build_dependent_inductive env0 indf'))
 	  ::(List.map2 (fun x (na,c,t) ->(x,c,t)) realnal arsign) in
   let rec buildrec n = function
@@ -1702,7 +1705,7 @@ let prepare_predicate_from_arsign_tycon loc tomatchs arsign c =
 		  NotInd _ -> (subst, len - signlen)
 		| IsInd (_, _, IndType(indf,realargs),_) ->
 		    let subst =
-		      if dependent tm c && List.for_all isRel realargs
+		      if dependent tm c && List.for_all isRel (snd realargs)
 		      then (n, 1) :: subst else subst
 		    in
 		      List.fold_left
@@ -1711,7 +1714,7 @@ let prepare_predicate_from_arsign_tycon loc tomatchs arsign c =
 			  | Rel n when dependent arg c ->
 			      ((n, len) :: subst, pred len)
 			  | _ -> (subst, pred len))
-			(subst, len) realargs)
+			(subst, len) (snd realargs))
 	  | _ -> (subst, len - signlen))
       ([], nar) tomatchs arsign
   in

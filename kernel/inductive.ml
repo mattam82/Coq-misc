@@ -27,20 +27,20 @@ let lookup_mind_specif env (kn,tyi) =
   (mib, mib.mind_packets.(tyi))
 
 let find_rectype env c =
-  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_argsl (whd_betadeltaiota env c) in
   match kind_of_term t with
   | Ind ind -> (ind, l)
   | _ -> raise Not_found
 
 let find_inductive env c =
-  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_argsl (whd_betadeltaiota env c) in
   match kind_of_term t with
     | Ind ind
         when (fst (lookup_mind_specif env ind)).mind_finite -> (ind, l)
     | _ -> raise Not_found
 
 let find_coinductive env c =
-  let (t, l) = decompose_app_annot (whd_betadeltaiota env c) in
+  let (t, l) = decompose_app_argsl (whd_betadeltaiota env c) in
   match kind_of_term t with
     | Ind ind
         when not (fst (lookup_mind_specif env ind)).mind_finite -> (ind, l)
@@ -276,9 +276,9 @@ let extended_rel_list n hyps =
 
 let build_dependent_inductive ind (_,mip) params =
   let realargs,_ = list_chop mip.mind_nrealargs_ctxt mip.mind_arity_ctxt in
-  app_annot_list (mkInd ind)
-  (concat_app_annot_list
-   (map_app_annot_list (lift mip.mind_nrealargs_ctxt) params)
+  app_argslc (mkInd ind)
+  (concat_argsl
+   (map_argsl (lift mip.mind_nrealargs_ctxt) params)
    (extended_rel_applist 0 realargs))
   
 (* This exception is local *)
@@ -329,28 +329,28 @@ let build_branches_type ind (_,mip as specif) params p =
     let typi = full_constructor_instantiate (ind,specif,snd params) cty in
     let (args,ccl) = decompose_prod_assum typi in
     let nargs = rel_context_length args in
-    let (_,allargs) = decompose_app_annot ccl in
-    let (lparams,vargs) = chop_app_annot_list (inductive_params specif) allargs in
+    let (_,allargs) = decompose_app_argsl ccl in
+    let (lparams,vargs) = chop_argsl (inductive_params specif) allargs in
     let cargs =
       let ann = relevance_of_sorts_family (inductive_sort_family mip) in
       let cstr = ith_constructor_of_inductive ind (i+1) in
-      let dep_cstr = app_annot_list (mkConstruct cstr) 
-	(concat_app_annot_list lparams (local_rels args)) in
-      concat_app_annot_list vargs ([ann],[dep_cstr]) in
-    let base = beta_app_annot (lift nargs p) cargs in
+      let dep_cstr = app_argslc (mkConstruct cstr) 
+	(concat_argsl lparams (local_rels args)) in
+      concat_argsl vargs ([ann],[dep_cstr]) in
+    let base = beta_app_argsl (lift nargs p) cargs in
     it_mkProd_or_LetIn base args in
   Array.mapi build_one_branch mip.mind_nf_lc
 
 (* [p] is the predicate, [c] is the match object, [realargs] is the
    list of real args of the inductive type *)
 let build_case_type n p c realargs =
-  whd_betaiota (betazeta_app_annot (n+1) p 
-		(concat_app_annot realargs ([Expl],[c])))
+  whd_betaiota (betazeta_app_argsl (n+1) p 
+		(concat_argsl realargs ([Expl],[c])))
 
 let type_case_branches env (ind,largs) pj c =
   let specif = lookup_mind_specif env ind in
   let nparams = inductive_params specif in
-  let (params,realargs) = chop_app_annot_list nparams largs in
+  let (params,realargs) = chop_argsl nparams largs in
   let p = pj.uj_val in
   let univ = is_correct_arity env c pj ind specif params in
   let lc = build_branches_type ind specif params p in
@@ -538,7 +538,7 @@ let branches_specif renv c_spec ci =
 
 let rec subterm_specif renv stack t =
   (* maybe reduction is not always necessary! *)
-  let f,l = decompose_app (whd_betadeltaiota renv.env t) in
+  let f,a,l = decompose_app (whd_betadeltaiota renv.env t) in
     match Constr.kind_of_term f with
       | Constr.Rel k -> subterm_var k renv
 
