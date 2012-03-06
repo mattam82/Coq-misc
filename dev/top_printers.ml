@@ -240,7 +240,7 @@ module Full = struct
   | LetIn (na,b,t,c) ->
       "LetIn("^(letbinder_display na)^","^(term_display b)^","
       ^(term_display t)^","^(term_display c)^")"
-  | App (c,(a,al),l) -> "App("^(term_display c)^",("^(ann_display a)^","^(ann_array_display al)^"),"^(array_display l)^")\n"
+  | App (c,al,l) -> "App("^(term_display c)^","^(ann_array_display al)^","^(array_display l)^")\n"
   | Evar (e,l) -> "Evar("^(string_of_int e)^","^(array_display l)^")"
   | Const c -> "Const("^(string_of_con c)^")"
   | Ind (sp,i) ->
