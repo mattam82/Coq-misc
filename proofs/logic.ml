@@ -26,6 +26,7 @@ open Type_errors
 open Retyping
 open Evarutil
 open Tacexpr
+open Constr
 
 type refiner_error =
 
@@ -352,7 +353,7 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
 	  let (gls,cty,sigma,trm) = res in
 	  (gls,cty,sigma,mkCast(trm,k,ty))
 
-    | App (f,l) ->
+    | App (f,a,l) ->
 	let (acc',hdty,sigma,applicand) =
 	  match kind_of_term f with
 	    | Ind _ | Const _
@@ -367,7 +368,7 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
 	let (acc'',conclty',sigma, args) =
 	  mk_arggoals sigma goal acc' hdty (Array.to_list l) in
 	check_conv_leq_goal env sigma trm conclty' conclty;
-        (acc'',conclty',sigma, Term.mkApp (applicand, Array.of_list args))
+        (acc'',conclty',sigma, mkApp (applicand, a, Array.of_list args))
 
     | Case (ci,p,c,lf) ->
 	let (acc',lbrty,conclty',sigma,p',c') = mk_casegoals sigma goal goalacc p c in
@@ -406,7 +407,7 @@ and mk_hdgoals sigma goal goalacc trm =
 	check_typability env sigma ty;
 	mk_refgoals sigma goal goalacc ty t
 
-    | App (f,l) ->
+    | App (f,a,l) ->
 	let (acc',hdty,sigma,applicand) =
 	  if isInd f or isConst f
 	     & not (array_exists occur_meta l) (* we could be finer *)
@@ -416,7 +417,7 @@ and mk_hdgoals sigma goal goalacc trm =
 	in
 	let (acc'',conclty',sigma, args) =
 	  mk_arggoals sigma goal acc' hdty (Array.to_list l) in
-	(acc'',conclty',sigma, Term.mkApp (applicand, Array.of_list args))
+	(acc'',conclty',sigma, mkApp (applicand, a, Array.of_list args))
 
     | Case (ci,p,c,lf) ->
 	let (acc',lbrty,conclty',sigma,p',c') = mk_casegoals sigma goal goalacc p c in
@@ -515,20 +516,22 @@ let prim_refiner r sigma goal =
 
     | Cut (b,replace,id,t) ->
         let (sg1,ev1,sigma) = mk_goal sign (nf_betaiota sigma t) in
+	let rel = Retyping.get_relevance_of env sigma t in
+	let na = (id, (rel, false)) in
 	let sign,cl,sigma =
 	  if replace then
 	    let nexthyp = get_hyp_after id (named_context_of_val sign) in
 	    let sign,cl,sigma = clear_hyps sigma [id] sign cl in
-	    move_hyp true false ([],(var_decl_of_name id t),named_context_of_val sign)
+	    move_hyp true false ([],(var_decl_of na t),named_context_of_val sign)
 	      nexthyp,
 	      cl,sigma
 	  else
             (if !check && mem_named_context id (named_context_of_val sign) then
 	      error ("Variable " ^ string_of_id id ^ " is already declared.");
-	     push_named_context_val (var_decl_of_name id t) sign,cl,sigma) in
+	     push_named_context_val (var_decl_of na t) sign,cl,sigma) in
         let (sg2,ev2,sigma) = 
 	  Goal.V82.mk_goal sigma sign cl (Goal.V82.extra sigma goal) in
-	let oterm = Term.mkApp (Term.mkNamedLambda id t ev2 , [| ev1 |]) in
+	let oterm = mkApp (mkFullNamedLambda na t ev2, [| rel |], [| ev1 |]) in
 	let sigma = Goal.V82.partial_solution sigma goal oterm in
         if b then ([sg1;sg2],sigma) else ([sg2;sg1],sigma)
 

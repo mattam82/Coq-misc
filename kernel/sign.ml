@@ -61,6 +61,15 @@ let instance_from_named_context sign =
     | [] -> [] in
   Array.of_list (inst_rec sign)
 
+let instance_args_from_named_context sign =
+  let rec inst_rec = function
+    | (id,Variable (an,_),_) :: sign -> 
+	let ans, args = inst_rec sign in
+	  an :: ans, mkVar id :: args
+    | _ :: sign -> inst_rec sign
+    | [] -> [], [] in
+  inst_rec sign
+
 let fold_named_context f l ~init = List.fold_right f l init
 let fold_named_context_reverse f ~init l = List.fold_left f init l
 

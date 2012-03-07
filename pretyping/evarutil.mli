@@ -159,7 +159,7 @@ val mk_valcon : constr -> val_constraint
 
 val split_tycon :
   loc -> env ->  evar_map -> type_constraint ->
-    evar_map * (name * type_constraint * type_constraint)
+    evar_map * (name binder_annot * type_constraint * type_constraint)
 
 val valcon_of_tycon : type_constraint -> val_constraint
 

@@ -117,6 +117,7 @@ val mkCast : constr * cast_kind * constr -> constr
 (** Constructs the product [(x:t1)t2] *)
 val mkProd : name * types * types -> types
 val mkNamedProd : identifier -> types -> types -> types
+val mkFullNamedProd : identifier binder_annot -> types -> types -> types
 
 (** non-dependent product [t1 -> t2], an alias for
    [forall (_:t1), t2]. Beware [t_2] is NOT lifted.
@@ -127,10 +128,12 @@ val mkArrow : types -> types -> constr
 (** Constructs the abstraction \[x:t{_ 1}\]t{_ 2} *)
 val mkLambda : name * types * constr -> constr
 val mkNamedLambda : identifier -> types -> constr -> constr
+val mkFullNamedLambda : identifier binder_annot -> types -> constr -> constr
 
 (** Constructs the product [let x = t1 : t2 in t3] *)
 val mkLetIn : name * constr * types * constr -> constr
 val mkNamedLetIn : identifier -> constr -> types -> constr -> constr
+val mkFullNamedLetIn : identifier letbinder_annot -> constr -> types -> constr -> constr
 
 (** [mkApp (f,[| t_1; ...; t_n |]] constructs the application
    {% $(f~t_1~\dots~t_n)$ %}. *)

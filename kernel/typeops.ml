@@ -47,6 +47,26 @@ let assumption_of_judgment env j =
   with TypeError _ ->
     error_assumption env j
 
+
+(* let rec relevance_of_constr env c = *)
+(*   match kind_of_term c with *)
+(*   | Rel n -> relevance_of_body (lookup_rel n env) *)
+(*   | Var id -> relevance_of_body (lookup_named id env) *)
+(*   | Meta m -> false *)
+(*   | Evar e -> false *)
+(*   | Sorts _ -> false *)
+(*   | Cast (c, _, _) -> relevance_of_constr c *)
+(*   | Prod _ -> false *)
+(*   | Lambda (na, t, b) -> relevance_of_constr (push_rel (var_decl_of na t) env) b *)
+(*   | LetIn (na, t, c, b) -> relevance_of_constr (push_rel (def_decl_of na t c) env) b *)
+(*   | App (c, ans, cs) -> relevance_of_constr c *)
+(*   | Const c -> constant_relevance c *)
+(*   | Ind _ -> false *)
+(*   | Construct c -> constructor_relevance c *)
+(*   | Case (ci, p, c, brs) -> in_prop p *)
+(*   | Fix ((_,i),(n,_,_)) -> snd n.(i) *)
+(*   | CoFix (i,(n,_,_)) -> snd n.(i) *)
+
 (************************************************)
 (* Incremental typing rules: builds a typing judgement given the *)
 (* judgements for the subterms. *)

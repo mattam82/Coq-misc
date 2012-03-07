@@ -609,10 +609,10 @@ let map_induction_arg f = function
 (**************************)
 
 let apply_type hdcty argl gl =
-  refine (applist (mkCast (Evarutil.mk_new_meta(),DEFAULTcast, hdcty),argl)) gl
+  refine (Constr.app_argsl (mkCast (Evarutil.mk_new_meta(),DEFAULTcast, hdcty),argl)) gl
 
 let apply_term hdc argl gl =
-  refine (applist (hdc,argl)) gl
+  refine (Constr.app_argsl (hdc,argl)) gl
 
 let bring_hyps hyps =
   if hyps = [] then Refiner.tclIDTAC
@@ -635,12 +635,13 @@ let resolve_classes gl =
 
 let cut c gl =
   match kind_of_term (pf_hnf_type_of gl c) with
-    | Sort _ ->
+    | Sort s ->
+	let rel = relevance_of_sort s in
         let id=next_name_away_with_default "H" Anonymous (pf_ids_of_hyps gl) in
-        let t = mkProd (Anonymous, c, pf_concl gl) in
+        let t = Constr.mkProd ((Anonymous, (rel, false)), c, pf_concl gl) in
           tclTHENFIRST
             (internal_cut_rev id c)
-            (tclTHEN (apply_type t [mkVar id]) (thin [id]))
+            (tclTHEN (apply_type t ([rel],[mkVar id])) (thin [id]))
             gl
     | _  -> error "Not a proposition or a type."
 
@@ -896,7 +897,7 @@ let make_projection sigma params cstr sign elim i n c =
 		prod_applist t (snd params@[mkApp (c,args)]))
       | None -> None
   in Option.map (fun (rel,abselim,elimt) -> 
-    let c = beta_applist (abselim,[rel],[mkApp (c,extended_rel_vect 0 sign)]) in
+    let c = beta_applist (abselim,[rel],[Constr.app_args (c,extended_rel_appvect 0 sign)]) in
     (it_mkLambda_or_LetIn c sign, it_mkProd_or_LetIn elimt sign)) elim
 
 let descend_in_conjunctions tac exit c gl =
@@ -1058,11 +1059,13 @@ let apply_in_once sidecond_first with_delta with_destruct with_evars id
 
 let cut_and_apply c gl =
   let goal_constr = pf_concl gl in
-    match kind_of_term (pf_hnf_constr gl (pf_type_of gl c)) with
-      | Prod (_,c1,c2) when not (dependent (mkRel 1) c2) ->
+    match Constr.kind_of_term (pf_hnf_constr gl (pf_type_of gl c)) with
+      | Constr.Prod ((na,(an,_)),c1,c2) when not (dependent (mkRel 1) c2) ->
+	  let rel = pf_apply Retyping.get_relevance_of gl c2 in
 	  tclTHENLAST
-	    (apply_type (mkProd (Anonymous,c2,goal_constr)) [mkMeta(new_meta())])
-	    (apply_term c [mkMeta (new_meta())]) gl
+	    (apply_type (Constr.mkProd ((Anonymous,(rel,false)),c2,goal_constr)) 
+	       ([rel],[mkMeta(new_meta())]))
+	    (apply_term c ([an],[mkMeta (new_meta())])) gl
       | _ -> error "lapply needs a non-dependent product."
 
 (********************************************************************)
@@ -1519,6 +1522,15 @@ let generalize_goal gl i ((occs,c,b),na) cl =
   let na = generalized_name c t (pf_ids_of_hyps gl) cl' na in
     mkProd_or_LetIn (na,b,t) cl'
 
+let arg_from_body c = function
+  | Term.Variable (ann, _) -> Some (ann, c)
+  | Term.Definition _ -> None
+
+let push_arg arg ((ans, vals) as args) = 
+  match arg with
+  | None -> args
+  | Some (an, arg) -> (an :: ans, arg :: vals)
+
 let generalize_dep ?(with_let=false) c gl =
   let env = pf_env gl in
   let sign = pf_hyps gl in
@@ -1544,21 +1556,29 @@ let generalize_dep ?(with_let=false) c gl =
     if with_let then
       match kind_of_term c with 
       | Var id -> (pi2 (pf_get_hyp gl id))
-      | _ -> variable_body
-    else variable_body
+      | _ -> 
+	  let t = pf_type_of gl c in
+	  let rel = pf_apply Retyping.get_relevance_of gl t in
+	    Variable (rel, false)
+    else
+      let t = pf_type_of gl c in
+      let rel = pf_apply Retyping.get_relevance_of gl t in
+	Variable (rel, false)
   in
   let cl'' = generalize_goal gl 0 ((all_occurrences,c,body),Anonymous) cl' in
-  let args = Array.to_list (instance_from_named_context to_quantify_rev) in
+  let args = instance_args_from_named_context to_quantify_rev in
   tclTHEN
-    (apply_type cl'' (if is_variable_body body then c::args else args))
+    (apply_type cl'' (push_arg (arg_from_body c body) args))
     (thin (List.rev tothin'))
     gl
+
+
 
 let generalize_gen_let lconstr gl =
   let newcl =
     list_fold_right_i (generalize_goal gl) 0 lconstr (pf_concl gl) in
-  apply_type newcl (list_map_filter (fun ((_,c,b),_) -> 
-    if is_variable_body b then Some c else None) lconstr) gl
+  apply_type newcl
+    (List.split (list_map_filter (fun ((_,c,b),_) -> arg_from_body c b) lconstr)) gl
 
 let generalize_gen lconstr =
   generalize_gen_let (List.map (fun ((occs,c),na) ->
@@ -1755,6 +1775,8 @@ let letin_tac_gen with_eq name (sigmac,c) test ty occs gl =
 	error ("The variable "^(string_of_id x)^" is already declared.") in
   let (depdecls,lastlhyp,ccl,c) = letin_abstract id c test occs gl in
   let t = match ty with Some t -> t | None -> pf_apply typ_of gl c in
+  let rel = pf_apply Retyping.get_relevance_of gl t in
+  let na = (id, rel) in
   let newcl,eq_tac = match with_eq with
     | Some (lr,(loc,ido)) ->
       let heq = match ido with
@@ -1766,12 +1788,12 @@ let letin_tac_gen with_eq name (sigmac,c) test ty occs gl =
       let args = if lr then [t;mkVar id;c] else [t;c;mkVar id]in
       let eq = applist (eqdata.eq,args) in
       let refl = applist (eqdata.refl, [t;mkVar id]) in
-      mkNamedLetIn id c t (mkLetIn (Name heq, refl, eq, ccl)),
+      mkFullNamedLetIn na c t (mkLetIn (Name heq, refl, eq, ccl)),
       tclTHEN
 	(intro_gen loc (IntroMustBe heq) lastlhyp true false)
 	(thin_body [heq;id])
     | None ->
-	mkNamedLetIn id c t ccl, tclIDTAC in
+	mkFullNamedLetIn na c t ccl, tclIDTAC in
   tclTHENLIST
     [ convert_concl_no_check newcl DEFAULTcast;
       intro_gen dloc (IntroMustBe id) lastlhyp true false;
@@ -2947,7 +2969,7 @@ let apply_induction_in_context hyp0 elim indvars names induct_tac gl =
   let dephyps = List.map (fun (id,_,_) -> id) deps in
   let deps_cstr =
     List.fold_left
-      (fun a (id,b,_) -> if is_variable_body b then (mkVar id)::a else a) [] deps in
+      (fun a (id,b,_) -> push_arg (arg_from_body (mkVar id) b) a) ([],[]) deps in
   tclTHENLIST
     [
       (* Generalize dependent hyps (but not args) *)
@@ -3307,10 +3329,10 @@ let dorE b cls =
 let impE id gl =
   let t = pf_get_hyp_typ gl id in
   if is_imp_term (pf_hnf_constr gl t) then
-    let (dom, _, rng) = destProd (pf_hnf_constr gl t) in
+    let (dom, _, rng) = Constr.destProd (pf_hnf_constr gl t) in
     tclTHENLAST
       (cut_intro rng)
-      (apply_term (mkVar id) [mkMeta (new_meta())]) gl
+      (apply_term (mkVar id) ([annot_of dom],[mkMeta (new_meta())])) gl
   else
     errorlabstrm "impE"
       (str("Tactic impE expects "^(string_of_id id)^

@@ -1123,6 +1123,10 @@ let mkNamedLambda id annot typ c =
 let mkNamedLetIn id annot c1 t c2 =
   mkLetIn ((Name id, annot), c1, t, subst_var id c2)
 
+let mkFullNamedProd (id, annot) typ c = mkNamedProd id annot typ c
+let mkFullNamedLambda (id, annot) typ c = mkNamedLambda id annot typ c
+let mkFullNamedLetIn (id, annot) typ b c = mkNamedLetIn id annot typ b c
+
 (* Constructs either [(x:t)c] or [[x=b:t]c] *)
 let mkProd_or_LetIn (na,body,t) c =
   match body with

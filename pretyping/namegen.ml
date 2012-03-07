@@ -311,15 +311,17 @@ let compute_displayed_let_name_in flags avoid na c =
   let fresh_id = next_name_for_display flags na avoid in
   (Name fresh_id, fresh_id::avoid)
 
+open Constr
+
 let rec rename_bound_vars_as_displayed avoid c =
   let rec rename avoid c =
     match kind_of_term c with
-    | Prod (na,c1,c2)  ->
+    | Prod ((na,ann),c1,c2)  ->
 	let na',avoid' = compute_displayed_name_in (RenamingElsewhereFor c2) avoid na c2 in
-	mkProd (na', c1, rename avoid' c2)
-    | LetIn (na,c1,t,c2) ->
+	mkProd ((na',ann), c1, rename avoid' c2)
+    | LetIn ((na,ann),c1,t,c2) ->
 	let na',avoid' = compute_displayed_let_name_in (RenamingElsewhereFor c2) avoid na c2 in
-	mkLetIn (na',c1,t, rename avoid' c2)
+	mkLetIn ((na',ann),c1,t, rename avoid' c2)
     | Cast (c,k,t) -> mkCast (rename avoid c, k,t)
     | _ -> c
   in

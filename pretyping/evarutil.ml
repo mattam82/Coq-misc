@@ -21,6 +21,8 @@ open Reductionops
 open Pretype_errors
 open Retyping
 
+open Constr
+
 (* Expanding existential variables *)
 (* 1- flush_and_check_evars fails if an existential is undefined *)
 
@@ -1321,7 +1323,7 @@ let head_evar =
   let rec hrec c = match kind_of_term c with
     | Evar (evk,_)   -> evk
     | Case (_,_,c,_) -> hrec c
-    | App (c,_)      -> hrec c
+    | App (c,_,_)      -> hrec c
     | Cast (c,_,_)   -> hrec c
     | _              -> raise NoHeadEvar
   in
@@ -1331,17 +1333,17 @@ let head_evar =
    guess it should consider Case too) *)
 
 let whd_head_evar_stack sigma c =
-  let rec whrec (c, l as s) =
+  let rec whrec (c, (ans,l) as s) =
     match kind_of_term c with
       | Evar (evk,args as ev) when Evd.is_defined sigma evk
-	  -> whrec (existential_value sigma ev, l)
-      | Cast (c,_,_) -> whrec (c, l)
-      | App (f,args) -> whrec (f, Array.fold_right (fun a l -> a::l) args l)
+	  -> whrec (existential_value sigma ev, (ans,l))
+      | Cast (c,_,_) -> whrec (c, (ans,l))
+      | App (f,ann,args) -> whrec (f, (Array.to_list ann @ ans, Array.fold_right (fun a l -> a::l) args l))
       | _ -> s
   in
-  whrec (c, [])
+  whrec (c, ([], []))
 
-let whd_head_evar sigma c = applist (whd_head_evar_stack sigma c)
+let whd_head_evar sigma c = app_argsl (whd_head_evar_stack sigma c)
 
 let rec expand_and_check_vars aliases = function
   | [], [] -> [], []
@@ -1689,7 +1691,7 @@ let define_pure_evar_as_product evd evk =
     let src = evar_source evk evd1 in
     let filter = true::evar_filter evi in
     new_type_evar evd1 newenv ~src ~filter in
-  let prod = mkProd (Name id, dom, subst_var id rng) in
+  let prod = Term.mkProd (Name id, dom, subst_var id rng) in
   let evd3 = Evd.define evk prod evd2 in
   evd3,prod
 
@@ -1782,22 +1784,22 @@ let split_tycon loc env evd tycon =
 	| Prod (na,dom,rng) -> evd, (na, dom, rng)
 	| Evar ev (* ev is undefined because of whd_betadeltaiota *) ->
 	    let (evd',prod) = define_evar_as_product evd ev in
-	    let (_,dom,rng) = destProd prod in
-	      evd',(Anonymous, dom, rng)
-	| App (c,args) when isEvar c ->
+	    let (na,dom,rng) = destProd prod in
+	      evd',(na, dom, rng)
+	| App (c,an,args) when isEvar c ->
 	    let (evd',lam) = define_evar_as_lambda env evd (destEvar c) in
-	    real_split evd' (mkApp (lam,args))
+	    real_split evd' (mkApp (lam,an,args))
 	| _ -> error_not_product_loc loc env evd c
   in
     match tycon with
-      | None -> evd,(Anonymous,None,None)
+      | None -> evd,(anonymous,None,None)
       | Some (abs, c) ->
 	  (match abs with
 	       None ->
 		 let evd', (n, dom, rng) = real_split evd c in
 		   evd', (n, mk_tycon dom, mk_tycon rng)
 	     | Some (init, cur) ->
-		 evd, (Anonymous, None, Some (unlift_tycon init cur c)))
+		 evd, (anonymous, None, Some (unlift_tycon init cur c)))
 
 let valcon_of_tycon x =
   match x with

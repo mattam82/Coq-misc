@@ -498,7 +498,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	inh_conv_coerce_to_tycon loc env evdref (resj, relf) tycon
 
     | GLambda(loc,name,bk,c1,c2)      ->
-	let (name',dom,rng) = evd_comb1 (split_tycon loc env) evdref tycon in
+	let ((name',_),dom,rng) = evd_comb1 (split_tycon loc env) evdref tycon in
 	let dom_valcon = valcon_of_tycon dom in
 	let j,relc1 = pretype_type dom_valcon env evdref lvar c1 in
 	let name = orelse_name name name' in

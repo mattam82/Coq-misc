@@ -76,11 +76,7 @@ Section Equivalence.
 Theorem iff_refl : forall A, A <-> A.
   Proof.
     split; auto.
-Set Printing All.
-Show Proof.
   Qed.
-
-
 Theorem iff_trans : forall A B C:Prop, (A <-> B) -> (B <-> C) -> (A <-> C).
   Proof.
     intros A B C [H1 H2] [H3 H4]; split; auto.
@@ -334,7 +330,7 @@ Section Logic_lemmas.
 
     Theorem not_eq_sym : x <> y -> y <> x.
     Proof.
-      red in |- *; intros h1 h2; apply h1; destruct h2; trivial.
+      red in |- *; intros h1 h2. apply h1. destruct h2. trivial.
     Qed.
 
   End equality.

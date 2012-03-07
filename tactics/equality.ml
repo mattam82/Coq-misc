@@ -550,8 +550,8 @@ let find_positions env sigma t1 t2 =
 	  else []
 
       | _ ->
-	  let t1_0 = applist (hd1,args1)
-          and t2_0 = applist (hd2,args2) in
+	  let t1_0 = Constr.app_argsl (hd1,(ann1,args1))
+          and t2_0 = Constr.app_argsl (hd2,(ann2,args2)) in
           if is_conv env sigma t1_0 t2_0 then
 	    []
           else
