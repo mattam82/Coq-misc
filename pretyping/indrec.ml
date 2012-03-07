@@ -133,7 +133,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
  * on it with which predicate and which recursive function.
  *)
 
-let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
+let type_rec_branch is_rec dep kinds env sigma (vargs,depPvect,decP) tyi cs recargs =
   let make_prod = make_prod_dep dep in
   let nparams = argsl_length vargs in
   let process_pos env depK pk =
@@ -419,7 +419,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let cs = get_constructor (indi,mibi,mipi,vargs) (j+1) in
 	      let p_0 =
 		type_rec_branch
-                  true dep env sigma (vargs,depPvec,i+j) tyi cs recarg
+                  true dep kinds env sigma (vargs,depPvec,i+j) tyi cs recarg
 	      in
 	      let ann = (relevance_of_sorts_family kinds, false) in
 	      let binder = Anonymous, ann in

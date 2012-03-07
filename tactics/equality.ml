@@ -754,7 +754,8 @@ let discrimination_pf e (t,t1,t2) discriminator lbeq =
   let i           = build_coq_I () in
   let absurd_term = build_coq_False () in
   let eq_elim     = ind_scheme_of_eq lbeq in
-  (applist (eq_elim, [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
+  (Constr.applist (eq_elim, [Expl;Expl;Expl;Irr;Expl],
+		     [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
 
 exception NotDiscriminable
 
@@ -771,11 +772,11 @@ let apply_on_clause (f,t) clause =
 
 let discr_positions env sigma (lbeq,eqn,(t,t1,t2)) eq_clause cpath dirn sort =
   let e = next_ident_away eq_baseid (ids_of_context env) in
-  let e_env = push_named (var_decl_of_name e t) env in
+  let e_env = push_named (var_decl_of (e,(Irr,false)) t) env in
   let discriminator =
     build_discriminator sigma e_env dirn (mkVar e) sort cpath in
   let (pf, absurd_term) = discrimination_pf e (t,t1,t2) discriminator lbeq in
-  let pf_ty = mkArrow eqn absurd_term in
+  let pf_ty = Constr.mkArrow Irr eqn absurd_term in
   let absurd_clause = apply_on_clause (pf,pf_ty) eq_clause in
   let pf = clenv_value_cast_meta absurd_clause in
   tclTHENS (cut_intro absurd_term)
