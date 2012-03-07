@@ -255,7 +255,7 @@ module Full = struct
       "Fix(([|"^(Array.fold_right (fun x i -> (string_of_int x)^(if not(i="")
         then (";"^i) else "")) t "")^"|],"^(string_of_int i)^"),"
       ^(array_display tl)^",[|"
-      ^(Array.fold_right (fun (x,rel) i -> (name_display x)^(if not(i="")
+      ^(Array.fold_right (fun x i -> (letbinder_display x)^(if not(i="")
         then (";"^i) else "")) lna "")^"|],"
       ^(array_display bl)^")"
   | CoFix(i,(lna,tl,bl)) ->

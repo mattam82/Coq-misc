@@ -52,7 +52,7 @@ val judge_of_constant_knowing_parameters :
 
 (** {6 Type of application. } *)
 val judge_of_apply :
-  env -> unsafe_judgment -> unsafe_type_judgment -> 
+  env -> unsafe_judgment ->
   relevance array -> unsafe_judgment array
     -> unsafe_judgment * constraints
 

@@ -133,7 +133,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
  * on it with which predicate and which recursive function.
  *)
 
-let type_rec_branch is_rec dep kinds env sigma (vargs,depPvect,decP) tyi cs recargs =
+let type_rec_branch is_rec dep pannot env sigma (vargs,depPvect,decP) tyi cs recargs =
   let make_prod = make_prod_dep dep in
   let nparams = argsl_length vargs in
   let process_pos env depK pk =
@@ -186,9 +186,9 @@ let type_rec_branch is_rec dep kinds env sigma (vargs,depPvect,decP) tyi cs reca
 	     let t_0 = process_pos env' dep' nP (lift 1 t) in		 
 	       make_prod_dep (dep or dep') env
                  (n,t,
-		  mkArrow (annot_of n) t_0
+		  mkArrow pannot t_0
 		    (process_constr
-		     (push_rel (var_decl_of (Anonymous, (annot_of n, false)) t_0) env')
+		     (push_rel (var_decl_of (Anonymous, (pannot, false)) t_0) env')
 		     (i+2) (lift 1 c_0) rest (nhyps-1) li')))
       | LetIn (n,b,t,c_0) ->
 	  mkLetIn (n,b,t,
@@ -213,7 +213,7 @@ let type_rec_branch is_rec dep kinds env sigma (vargs,depPvect,decP) tyi cs reca
   let c = it_mkProd_or_LetIn base cs.cs_args in
   process_constr env 0 c recargs nhyps ([],[])
 
-let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
+let make_rec_branch_arg env sigma pann (nparrec,fvect,decF) f cstr recargs =
   let process_pos env fk ann =
     let rec prec env i hyps p =
       let p',largs = whd_betadeltaiota_nolet_stack env sigma p in
@@ -253,7 +253,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
 	       let arg = process_pos env' nF ann (lift 1 t) in
                mkLambda_name env
 		 (n,t,process_constr env' (i+1)
-		    (whd_beta Evd.empty (applist (lift 1 f, [ann;Expl], [(mkRel 1); arg])))
+		    (whd_beta Evd.empty (applist (lift 1 f, [ann;pann], [(mkRel 1); arg])))
 		    (cprest,rest)))
     | (n,Definition (ann,c),t as d)::cprest, rest ->
 	mkLetIn
@@ -304,8 +304,8 @@ let mis_make_indrec env sigma listdepkind mib =
   let recargpar = recargparn [] (nparams-nparrec) in
   let make_one_rec p =
     let makefix nbconstruct =
-      let rec mrec i ln ltyp ldef = function
-	| (indi,mibi,mipi,dep,_)::rest ->
+      let rec mrec i ln lnames ltyp ldef = function
+	| (indi,mibi,mipi,dep,kinds)::rest ->
 	    let tyi = snd indi in
 	    let nctyi =
               Array.length mipi.mind_consnames in (* nb constructeurs du type*)
@@ -330,6 +330,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	    let args' = extended_rel_applist (dect+nrec) lnamesparrec in
 	    let args'' = extended_rel_applist ndepar lnonparrec in
             let indf' = make_ind_family(indi,concat_argsl args' args'') in
+	    let pannot = relevance_of_sorts_family kinds in
 
 	    let branches =
 	      let constrs = get_constructors env indf' in
@@ -339,7 +340,7 @@ let mis_make_indrec env sigma listdepkind mib =
 		fi
 	      in
 		array_map3
-		  (make_rec_branch_arg env sigma
+		  (make_rec_branch_arg env sigma pannot
 		      (nparrec,depPvec,larsign))
                   vecfi constrs (dest_subterms recargsvec.(tyi))
 	    in
@@ -394,16 +395,18 @@ let mis_make_indrec env sigma listdepkind mib =
 		concl
 		deparsign
 	    in
-	      mrec (i+nctyi) (rel_context_nhyps arsign ::ln) (typtyi::ltyp)
+
+	    let binderi = (Name(id_of_string "F"), relevance_of_sorts_family kinds) in
+	      mrec (i+nctyi) (rel_context_nhyps arsign ::ln) (binderi::lnames) (typtyi::ltyp)
                 (deftyi::ldef) rest
         | [] ->
 	    let fixn = Array.of_list (List.rev ln) in
+            let names = Array.of_list (List.rev lnames) in
             let fixtyi = Array.of_list (List.rev ltyp) in
             let fixdef = Array.of_list (List.rev ldef) in
-            let names = Array.create nrec (letbinder_annot_of (Name(id_of_string "F"))) in
 	      mkFix ((fixn,p),(names,fixtyi,fixdef))
       in
-	mrec 0 [] [] []
+	mrec 0 [] [] [] []
     in
     let rec make_branch env i = function
       | (indi,mibi,mipi,dep,kinds)::rest ->
@@ -417,11 +420,12 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let recarg = recargpar@recarg in
 	      let vargs = extended_rel_applist (nrec+i+j) lnamesparrec in
 	      let cs = get_constructor (indi,mibi,mipi,vargs) (j+1) in
+	      let rel = relevance_of_sorts_family kinds in
 	      let p_0 =
 		type_rec_branch
-                  true dep kinds env sigma (vargs,depPvec,i+j) tyi cs recarg
+                  true dep rel env sigma (vargs,depPvec,i+j) tyi cs recarg
 	      in
-	      let ann = (relevance_of_sorts_family kinds, false) in
+	      let ann = (rel, false) in
 	      let binder = Anonymous, ann in
 		mkLambda_string "f" ann p_0
 		  (onerec (push_rel (var_decl_of binder p_0) env) (j+1))

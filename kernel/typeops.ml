@@ -216,7 +216,7 @@ let judge_of_letin env name defj typj j =
 
 (* Type of an application. *)
 
-let judge_of_apply env funj funjty rels argjv =
+let judge_of_apply env funj rels argjv =
   let rec apply_rec n typ cst = function
     | [], [] ->
       { uj_val  = mkApp (j_val funj, rels, Array.map j_val argjv);
@@ -442,8 +442,8 @@ let rec execute env cstr cu =
 		(* No sort-polymorphism *)
 		execute env f cu1
 	in
-	let (j',cu3) = execute_type env j.uj_type cu2 in
-	  univ_combinator cu3 (judge_of_apply env j j' impls jl)
+	(* let (j',cu3) = execute_type env j.uj_type cu2 in *)
+	  univ_combinator cu2 (judge_of_apply env j impls jl)
 
     | Lambda (name,c1,c2) ->
         let (varj,cu1) = execute_type env c1 cu in
