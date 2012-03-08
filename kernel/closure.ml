@@ -733,7 +733,8 @@ let rec get_args n tys f e stk =
         let na = Array.length l in
         if n == na then
           if anargs<>Array.of_list(List.map(fun((_,(imp,_)),_)->imp)tys) then
-	    anomaly ("in get_args: mismatched arguments")
+	    (warning ("in get_args: mismatched arguments");
+	     (Inl (subs_cons(l,e)),s))
 	  else
 	    (Inl (subs_cons(l,e)),s)
         else if n < na then (* more arguments *)
@@ -743,7 +744,8 @@ let rec get_args n tys f e stk =
         else (* more lambdas *)
           let etys = list_skipn na tys in
             if anargs<>Array.of_list(List.map(fun((_,(imp,_)),_)->imp) (list_firstn na tys)) then
-	      anomaly ("in get_args: mismatched arguments")
+	      (warning ("in get_args: mismatched arguments");
+               get_args (n-na) etys f (subs_cons(l,e)) s)
 	    else
               get_args (n-na) etys f (subs_cons(l,e)) s
     | _ -> (Inr {norm=Cstr;term=FLambda(n,tys,f,e)}, stk)

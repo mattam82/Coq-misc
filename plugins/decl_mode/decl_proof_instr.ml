@@ -400,7 +400,7 @@ let concl_refiner metas body gls =
 	let _A = subst_meta subst typ in
 	let x = id_of_name_using_hdchar env _A Anonymous in
 	let _x = fresh_id avoid x gls in
-	let nenv = Environ.push_named (_x,None,_A) env in
+	let nenv = Environ.push_named (_x,variable_body,_A) env in
 	let asort = family_of_sort (Typing.sort_of nenv evd _A) in
 	let nsubst = (n,mkVar _x)::subst in
 	  if rest = [] then
@@ -594,7 +594,7 @@ let assume_tac hyps gls =
        tclTHEN
 	 (push_intro_tac
 	    (fun id ->
-	       convert_hyp (id,None,st.st_it)) st.st_label))
+	       convert_hyp (id,variable_body,st.st_it)) st.st_label))
 	 hyps tclIDTAC gls
 
 let assume_hyps_or_theses hyps gls =
@@ -604,7 +604,7 @@ let assume_hyps_or_theses hyps gls =
 	   tclTHEN
 	     (push_intro_tac
 		(fun id ->
-		   convert_hyp (id,None,c)) nam)
+		   convert_hyp (id,variable_body,c)) nam)
        | Hprop {st_label=nam;st_it=Thesis (tk)} ->
 	   tclTHEN
 	     (push_intro_tac
@@ -616,7 +616,7 @@ let assume_st hyps gls =
     (fun st ->
        tclTHEN
 	 (push_intro_tac
-	    (fun id -> convert_hyp (id,None,st.st_it)) st.st_label))
+	    (fun id -> convert_hyp (id,variable_body,st.st_it)) st.st_label))
 	 hyps tclIDTAC gls
 
 let assume_st_letin hyps gls =
@@ -625,7 +625,7 @@ let assume_st_letin hyps gls =
        tclTHEN
 	 (push_intro_tac
 	    (fun id ->
-	       convert_hyp (id,Some (fst st.st_it),snd st.st_it)) st.st_label))
+	       convert_hyp (id,definition_body (fst st.st_it),snd st.st_it)) st.st_label))
 	 hyps tclIDTAC gls
 
 (* suffices *)
@@ -719,7 +719,7 @@ let rec consider_match may_intro introduced available expected gls =
 	  error "Not enough sub-hypotheses to match statements."
 	    (* should tell which ones *)
     | id::rest_ids,(Hvar st | Hprop st)::rest ->
-	tclIFTHENELSE (convert_hyp (id,None,st.st_it))
+	tclIFTHENELSE (convert_hyp (id,variable_body,st.st_it))
 	  begin
 	    match st.st_label with
 		Anonymous ->
@@ -1288,7 +1288,7 @@ let understand_my_constr c gls =
   let nc = names_of_rel_context env in
   let rawc = Detyping.detype false [] nc c in
   let rec frob = function GEvar _ -> GHole (dummy_loc,QuestionMark Expand) | rc ->  map_glob_constr frob rc in
-    Pretyping.Default.understand_tcc (sig_sig gls) env ~expected_type:(pf_concl gls) (frob rawc)
+    fst (Pretyping.Default.understand_tcc (sig_sig gls) env ~expected_type:(pf_concl gls) (frob rawc))
 
 let my_refine c gls =
   let oc = understand_my_constr c gls in

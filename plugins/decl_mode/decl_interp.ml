@@ -146,7 +146,7 @@ let interp_justification_items sigma env =
 
 let interp_constr check_sort sigma env c =
   if check_sort then
-    understand_type sigma env (fst c)
+    fst (understand_type sigma env (fst c))
   else
     understand sigma env (fst c)
 
@@ -401,7 +401,7 @@ let interp_suffices_clause sigma env (hyps,cot)=
     match hyp with
 	(Hprop st | Hvar st) ->
 	  match st.st_label with
-	      Name id -> Environ.push_named (id,None,st.st_it) env0
+	      Name id -> Environ.push_named (id,variable_body,st.st_it) env0
 	    | _ -> env in
   let nenv = List.fold_right push_one locvars env in
     nenv,res

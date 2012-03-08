@@ -152,7 +152,7 @@ let coq_rename_vars env vars =
     (fun (na,t) (newvars, newenv) ->
        let id = next_name_away na !avoid in
        avoid := id :: !avoid;
-       id :: newvars, Environ.push_named (id, None, t) newenv)
+       id :: newvars, Environ.push_named (id, variable_body, t) newenv)
     vars ([],env)
 
 (* extract the prenex type quantifications i.e.
@@ -197,7 +197,7 @@ let rec eta_expanse t vars env i =
       | Prod (n, a, b) when not (Termops.dependent (mkRel 1) b) ->
 	  let avoid = Termops.ids_of_named_context (Environ.named_context env) in
 	  let id = next_name_away n avoid in
-	  let env' = Environ.push_named (id, None, a) env in
+	  let env' = Environ.push_named (id, variable_body, a) env in
 	  let t' = mkApp (t, [| mkVar id |]) in
 	  eta_expanse t' (id :: vars) env' (pred i)
       | _ ->
@@ -491,7 +491,7 @@ and axiomatize_body env r id d = match r with
 		       | Fix ((_,i), (names,_,bodies)) ->
                            (* we only deal with named functions *)
 			   begin try
-			     let l = rec_names_for c names in
+			     let l = rec_names_for c (Array.map fst names) in
 			     substl (List.rev_map mkConst l) bodies.(i)
 			   with Not_found ->
 			     b

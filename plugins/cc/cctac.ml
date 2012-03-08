@@ -155,7 +155,7 @@ let rec quantified_atom_of_constr env sigma nrels term =
 	  let patts=patterns_of_constr env sigma nrels atom in
 	      `Nrule patts
 	else 
-	  quantified_atom_of_constr (Environ.push_rel (id,None,atom) env) sigma (succ nrels) ff
+	  quantified_atom_of_constr (Environ.push_rel (id,variable_body,atom) env) sigma (succ nrels) ff
     | _ ->  
 	let patts=patterns_of_constr env sigma nrels term in
 	    `Rule patts
@@ -170,7 +170,7 @@ let litteral_of_constr env sigma term=
 	else
 	  begin
 	    try 
-	      quantified_atom_of_constr (Environ.push_rel (id,None,atom) env) sigma 1 ff  
+	      quantified_atom_of_constr (Environ.push_rel (id,variable_body,atom) env) sigma 1 ff  
 	    with Not_found ->
 	      `Other (decompose_term env sigma term)
 	  end
