@@ -378,10 +378,10 @@ let array_of_stack s =
   | _ -> assert false
   in Array.concat (stackrec s)
 let rec stack_assign s p c = match s with
-  | Zapp (an,args) as hd :: s ->
+  | Zapp (an,args) :: s ->
       let q = Array.length args in
       if p >= q then
-	hd :: stack_assign s (p-q) c
+	Zapp (an, args) :: stack_assign s (p-q) c
       else
         (let nargs = Array.copy args in
          nargs.(p) <- c;
@@ -658,21 +658,21 @@ let rec fstrong unfreeze_fun lfts v =
   to_constr (fstrong unfreeze_fun) lfts (unfreeze_fun v)
 *)
 
-let rec zip m an stk =
+let rec zip m stk =
   match stk with
     | [] -> m
-    | Zapp (ans,args) :: s -> zip {norm=neutr m.norm; term=FApp(m, ans, args)} an s
+    | Zapp (ans,args) :: s -> zip {norm=neutr m.norm; term=FApp(m, ans, args)} s
     | Zcase(ci,p,br)::s ->
         let t = FCases(ci, p, m, br) in
-        zip {norm=neutr m.norm; term=t} an s
-    | Zfix(fx,an',par)::s ->
-        zip fx an' (par @ append_stack ([|an|], [|m|]) s)
+        zip {norm=neutr m.norm; term=t} s
+    | Zfix(fx,an,par)::s ->
+        zip fx (par @ append_stack ([|an|], [|m|]) s)
     | Zshift(n)::s ->
-        zip (lift_fconstr n m) an s
+        zip (lift_fconstr n m) s
     | Zupdate(rf)::s ->
-        zip (update rf (m.norm,m.term)) an s
+        zip (update rf (m.norm,m.term)) s
 
-let fapp_stack (m,an,stk) = zip m an stk
+let fapp_stack (m,stk) = zip m stk
 
 (*********************************************************************)
 
@@ -695,23 +695,26 @@ let strip_update_shift_app head stk =
     | stk -> (depth,List.rev rstk, stk) in
   strip_rec [] head 0 stk
 
+let array_split_at n arr =
+  let len = Array.length arr in
+    (Array.sub arr 0 n, arr.(n), Array.sub arr (n+1) (len-n-1))
 
 let get_nth_arg head n stk =
   assert (head.norm <> Red);
   let rec strip_rec rstk h n = function
     | Zshift(k) as e :: s ->
         strip_rec (e::rstk) (lift_fconstr k h) n s
-    | Zapp (anargs,args) as e::s' ->
+    | Zapp (anargs,args)::s' ->
         let q = Array.length args in
         if n >= q
         then
-          strip_rec (e::rstk) {norm=h.norm;term=FApp(h,anargs,args)} (n-q) s'
+          strip_rec (Zapp (anargs, args)::rstk) {norm=h.norm;term=FApp(h,anargs,args)} (n-q) s'
         else
-          let bef, aft = array_chop n args in
-	  let befan, aftan = array_chop n anargs in
+          let bef, arg, aft = array_split_at n args in
+	  let befan, argan, aftan = array_split_at n anargs in
           let stk' =
             List.rev (if n = 0 then rstk else (Zapp (befan, bef) :: rstk)) in
-          (Some (stk', args.(n)), append_stack (aftan, aft) s')
+          (Some (stk', arg), append_stack (aftan, aft) s')
     | Zupdate(m)::s ->
         strip_rec rstk (update m (h.norm,h.term)) n s
     | s -> (None, List.rev rstk @ s) in
@@ -728,15 +731,40 @@ let rec get_args n tys f e stk =
         get_args n tys f (subs_shft (k,e)) s
     | Zapp (anargs,l) :: s ->
         let na = Array.length l in
-        if n == na then (Inl (subs_cons(l,e)),s)
+        if n == na then
+          if anargs<>Array.of_list(List.map(fun((_,(imp,_)),_)->imp)tys) then
+	    anomaly ("in get_args: mismatched arguments")
+	  else
+	    (Inl (subs_cons(l,e)),s)
         else if n < na then (* more arguments *)
           let args, eargs = array_chop n l in
 	  let anargs, aneargs = array_chop n anargs in
           (Inl (subs_cons(args,e)), Zapp (aneargs, eargs) :: s)
         else (* more lambdas *)
           let etys = list_skipn na tys in
-          get_args (n-na) etys f (subs_cons(l,e)) s
+            if anargs<>Array.of_list(List.map(fun((_,(imp,_)),_)->imp) (list_firstn na tys)) then
+	      anomaly ("in get_args: mismatched arguments")
+	    else
+              get_args (n-na) etys f (subs_cons(l,e)) s
     | _ -> (Inr {norm=Cstr;term=FLambda(n,tys,f,e)}, stk)
+
+(* and get_impls acc tys f e l aimps s = *)
+(*   match tys, l, aimps with  *)
+(*       (_,i1,_)::tys, arg::l, i2::imps when i1=i2 -> *)
+(*         get_impls (arg::acc) tys f e l imps s *)
+(*     | (_,Impl,_)::tys, _, _ -> *)
+(*         get_impls acc tys f e l aimps s *)
+(*     | _, _::l, Impl::imps -> *)
+(*         get_impls acc tys f e l imps s *)
+(*     | [], [], _ -> *)
+(*         Inl(subs_cons(Array.of_list(List.rev acc),e)),s *)
+(*     | [], _, _ -> *)
+(*         Inl(subs_cons(Array.of_list(List.rev acc),e)), *)
+(*         append_stack (Array.of_list l) (Array.of_list aimps) s *)
+(*     | _, [], _ -> *)
+(*         get_args (List.length tys) tys f *)
+(*           (subs_cons(Array.of_list(List.rev acc),e)) s *)
+(*     | _ -> assert false *)
 
 (* Eta expansion: add a reference to implicit surrounding lambda at end of stack *)
 let rec eta_expand_stack ann = function
@@ -814,7 +842,7 @@ let rec knh m stk =
     | FCases(ci,p,t,br) -> knh t (Zcase(ci,p,br)::zupdate m stk)
     | FFix(((ri,n),(ni,_,_)),_) ->
         (match get_nth_arg m ri.(n) stk with
-             (Some(pars,arg),stk') -> knh arg (Zfix(m,snd ni.(n), pars)::stk')
+             (Some(pars,arg),stk') -> knh arg (Zfix(m,snd ni.(n),pars)::stk')
            | (None, stk') -> (m,stk'))
     | FCast(t,_,_) -> knh t stk
 (* cases where knh stops *)
@@ -865,7 +893,7 @@ let rec knr info m stk =
             let rargs = drop_parameters depth ci.ci_npar args in
             kni info br.(c-1) (rargs@s)
         | (_, cargs, Zfix(fx,an,par)::s) ->
-            let rarg = fapp_stack(m,an,cargs) in
+            let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack ([|an|],[|rarg|]) s in
             let (fxe,fxbd) = contract_fix_vect fx.term in
             knit info fxe fxbd stk'
@@ -894,7 +922,7 @@ and knit info e t stk =
 
 let kh info v stk = 
   let ht, s = kni info v stk in
-    fapp_stack (ht, Expl, s) 
+    fapp_stack (ht, s) 
 
 (************************************************************************)
 
@@ -922,7 +950,7 @@ let rec kl info m =
   if is_val m then (incr prune; term_of_fconstr m)
   else
     let (nm,s) = kni info m [] in
-    let _ = fapp_stack(nm,Expl,s) in (* to unlock Zupdates! *)
+    let _ = fapp_stack(nm,s) in (* to unlock Zupdates! *)
     zip_term (kl info) (norm_head info nm) s
 
 (* no redex: go up for atoms and already normalized terms, go down
@@ -970,7 +998,7 @@ let inject = mk_clos (subs_id 0)
 
 let whd_stack infos m stk =
   let h, s = kni infos m stk in
-  let _ = fapp_stack (h, Expl, s) in (* to unlock Zupdates! *)
+  let _ = fapp_stack (h, s) in (* to unlock Zupdates! *)
   (h, s)
 
 (* cache of constants: the body is computed only when needed. *)

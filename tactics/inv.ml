@@ -127,7 +127,7 @@ let make_inv_predicate env sigma indf realargs id status concl =
      push <Ai>(mkRel k)=ai (when   Ai is closed).
    In any case, we carry along the rest of pairs *)
   let rec build_concl eqns n = function
-    | [] -> (it_mkProd concl eqns,n)
+    | [] -> (it_mkProd_or_LetIn concl eqns,n)
     | (ai,(xi,ti))::restlist ->
         let (lhs,eqnty,rhs) =
           if closed0 ti then
@@ -137,7 +137,7 @@ let make_inv_predicate env sigma indf realargs id status concl =
 	in
         let eq_term = Coqlib.build_coq_eq () in
         let eqn = applist (eq_term ,[eqnty;lhs;rhs]) in
-	build_concl ((Anonymous,lift n eqn)::eqns) (n+1) restlist
+	build_concl (var_decl_of (Anonymous,(Irr,false)) (lift n eqn)::eqns) (n+1) restlist
   in
   let (newconcl,neqns) = build_concl [] 0 pairs in
   let predicate = it_mkLambda_or_LetIn_name env newconcl hyps in

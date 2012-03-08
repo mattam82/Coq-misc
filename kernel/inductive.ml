@@ -173,11 +173,11 @@ let instantiate_universes env ctx ar argsorts =
   let level = subst_large_constraints subst ar.poly_level in
   ctx,
   (* Singleton type not containing types are interpretable in Prop *)
-  if is_type0m_univ level then prop_sort
+  if is_type0m_univ level then set_sort
   (* Non singleton type not containing types are interpretable in Set *)
   else if is_type0_univ level then set_sort
   (* This is a Type with constraints *)
- else Type level
+  else Type level
 
 exception SingletonInductiveBecomesProp of identifier
 

@@ -44,13 +44,15 @@ let occur_meta_or_undefined_evar evd c =
 
 let abstract_scheme env c l lname_typ =
   List.fold_left2
-    (fun t (locc,a) (na,_,ta) ->
+    (fun t (locc,a) (na,b,ta) ->
        let na = match kind_of_term a with Var id -> Name id | _ -> na in
 (* [occur_meta ta] test removed for support of eelim/ecase but consequences
    are unclear...
        if occur_meta ta then error "cannot find a type for the generalisation"
-       else *) if occur_meta a then mkLambda_name env (na,ta,t)
-       else mkLambda_name env (na,ta,subst_closed_term_occ locc a t))
+       else *) 
+       let na = (na, (annot_of_body b, false)) in
+	 if occur_meta a then mkLambda_name_annot env (na,ta,t)
+	 else mkLambda_name_annot env (na,ta,subst_closed_term_occ locc a t))
     c
     (List.rev l)
     lname_typ

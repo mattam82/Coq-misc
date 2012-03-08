@@ -620,7 +620,7 @@ let bring_hyps hyps =
     (fun gl ->
       let newcl = List.fold_right mkNamedProd_or_LetIn hyps (pf_concl gl) in
       let f = mkCast (Evarutil.mk_new_meta(),DEFAULTcast, newcl) in
-      refine_no_check (mkApp (f, instance_from_named_context hyps)) gl)
+      refine_no_check (Constr.app_argsl (f, instance_args_from_named_context hyps)) gl)
 
 let resolve_classes gl =
   let env = pf_env gl and evd = project gl in

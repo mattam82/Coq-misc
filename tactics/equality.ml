@@ -860,15 +860,17 @@ let find_sigma_data s = build_sigma_type ()
 
 let make_tuple env sigma (rterm,rty) lind =
   assert (dependent (mkRel lind) rty);
+  let s = get_sort_of env sigma rty in
+  let rel = relevance_of_sort s in
   let {intro = exist_term; typ = sig_term} =
-    find_sigma_data (get_sort_of env sigma rty) in
+    find_sigma_data s in
   let a = type_of env sigma (mkRel lind) in
   let (na,_,_) = lookup_rel lind env in
   (* We move [lind] to [1] and lift other rels > [lind] by 1 *)
   let rty = lift (1-lind) (liftn lind (lind+1) rty) in
   (* Now [lind] is [mkRel 1] and we abstract on (na:a) *)
   let p = mkLambda (na, a, rty) in
-  (applist(exist_term,[a;p;(mkRel lind);rterm]),
+  (Constr.app_argsl(exist_term,([Expl;Expl;Expl;rel],[a;p;(mkRel lind);rterm])),
    applist(sig_term,[a;p]))
 
 (* check that the free-references of the type of [c] are contained in

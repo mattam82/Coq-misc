@@ -67,6 +67,8 @@ Section Well_founded.
 
 (** Well-founded fixpoints *)
 
+ Scheme Acc_inv_dep := Induction for Acc Sort Prop.
+
  Section FixPoint.
 
   Variable P : A -> Type.
@@ -75,13 +77,11 @@ Section Well_founded.
   Fixpoint Fix_F (x:A) (a:Acc x) : P x :=
     F (fun (y:A) (h:R y x) => Fix_F (Acc_inv a h)).
 
-  Scheme Acc_inv_dep := Induction for Acc Sort Prop.
-
   Lemma Fix_F_eq :
    forall (x:A) (r:Acc x),
      F (fun (y:A) (p:R y x) => Fix_F (x:=y) (Acc_inv r p)) = Fix_F (x:=x) r.
   Proof.
-   destruct r using Acc_inv_dep; auto.
+   destruct r using Acc_inv_dep; simpl in *; auto.
   Qed.
 
   Definition Fix (x:A) := Fix_F (Rwf x).

@@ -199,11 +199,11 @@ module Constr = struct
     list_firstn n a, list_firstn n l
 
   let applistc f ans args =
-      App (f, Array.of_list ans, Array.of_list args)
+    mkApp (f, Array.of_list ans, Array.of_list args)
 
   let applist (f,ans,args) = applistc f ans args
 
-  let appvect (f,ans,args) = App (f, ans, args)
+  let appvect (f,ans,args) = mkApp (f, ans, args)
 
   let recompose_app f anargs = 
     let ans, args = List.split anargs in

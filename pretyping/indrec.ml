@@ -133,7 +133,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
  * on it with which predicate and which recursive function.
  *)
 
-let type_rec_branch is_rec dep pannot env sigma (vargs,depPvect,decP) tyi cs recargs =
+let type_rec_branch is_rec dep pannot cannot env sigma (vargs,depPvect,decP) tyi cs recargs =
   let make_prod = make_prod_dep dep in
   let nparams = argsl_length vargs in
   let process_pos env depK pk =
@@ -150,8 +150,8 @@ let type_rec_branch is_rec dep pannot env sigma (vargs,depPvect,decP) tyi cs rec
 	    let realargs = argsl_skipn nparams largs in
 	    let base = app_argsl (lift i pk,realargs) in
             if depK then
-	      Reduction.beta_appvect
-                base [|app_argsl (mkRel (i+1), extended_rel_applist 0 sign)|]
+	      Reduction.beta_app_argsl
+                base ([cannot], [app_argsl (mkRel (i+1), extended_rel_applist 0 sign)])
             else
 	      base
       	| _ -> assert false
@@ -202,7 +202,7 @@ let type_rec_branch is_rec dep pannot env sigma (vargs,depPvect,decP) tyi cs rec
 	let realargs = List.map (fun k -> mkRel (i-k)) args in
         let params = map_argsl (lift i) vargs in
         let co = app_argsl (mkConstruct cs.cs_cstr,concat_argsl params (ans,realargs)) in
-	Reduction.beta_appvect c [|co|]
+	Reduction.beta_app_argsl c ([cannot],[co])
       else c
   in
   let nhyps = List.length cs.cs_args in
@@ -234,7 +234,7 @@ let make_rec_branch_arg env sigma pann (nparrec,fvect,decF) f cstr recargs =
   in
   (* ici, cstrprods est la liste des produits du constructeur instantié *)
   let rec process_constr env i f = function
-    | (n,Variable (ann,_),t as d)::cprest, recarg::rest ->
+    | (n,Variable (ann,impl),t as d)::cprest, recarg::rest ->
         let optionpos =
 	  match dest_recarg recarg with
             | Norec   -> None
@@ -243,17 +243,19 @@ let make_rec_branch_arg env sigma pann (nparrec,fvect,decF) f cstr recargs =
 	in
         (match optionpos with
            | None ->
-	       mkLambda_name env
-		 (n,t,process_constr (push_rel d env) (i+1)
+	       mkLambda_name_annot env
+		 ((n,(ann,impl)),t,
+		  process_constr (push_rel d env) (i+1)
 		    (whd_beta Evd.empty (applist (lift 1 f, [ann], [mkRel 1])))
 		    (cprest,rest))
            | Some(_,f_0) ->
 	       let nF = lift (i+1+decF) f_0 in
                let env' = push_rel d env in
 	       let arg = process_pos env' nF ann (lift 1 t) in
-               mkLambda_name env
-		 (n,t,process_constr env' (i+1)
-		    (whd_beta Evd.empty (applist (lift 1 f, [ann;pann], [(mkRel 1); arg])))
+               mkLambda_name_annot env
+		 ((n,(ann,impl)),t,
+		  process_constr env' (i+1)
+		    (whd_beta Evd.empty (applist (lift 1 f, [ann;pann], [mkRel 1; arg])))
 		    (cprest,rest)))
     | (n,Definition (ann,c),t as d)::cprest, rest ->
 	mkLetIn
@@ -421,9 +423,10 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let vargs = extended_rel_applist (nrec+i+j) lnamesparrec in
 	      let cs = get_constructor (indi,mibi,mipi,vargs) (j+1) in
 	      let rel = relevance_of_sorts_family kinds in
+	      let crel = relevance_of_sorts_family (inductive_sort_family mipi) in
 	      let p_0 =
 		type_rec_branch
-                  true dep rel env sigma (vargs,depPvec,i+j) tyi cs recarg
+                  true dep rel crel env sigma (vargs,depPvec,i+j) tyi cs recarg
 	      in
 	      let ann = (rel, false) in
 	      let binder = Anonymous, ann in
