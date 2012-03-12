@@ -80,7 +80,7 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
   in
 (*   observe (str "starting princ_type := " ++ pr_lconstr_env env princ_type); *)
 (*   observe (str "princ_infos : " ++ pr_elim_scheme princ_type_info); *)
-  let change_predicate_sort i (x,_,t) =
+  let change_predicate_sort i (x,b,t) =
     let new_sort = sorts.(i) in
     let args,_ = decompose_prod t in
     let real_args =
@@ -88,7 +88,7 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
       then List.tl args
       else args
     in
-    Nameops.out_name x,None,compose_prod real_args (mkSort new_sort)
+      Nameops.out_name x,b,compose_prod real_args (mkSort new_sort)
   in
   let new_predicates =
     list_map_i
@@ -198,7 +198,7 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
       try
 	let new_t,binders_to_remove_from_t = compute_new_princ_type remove env t in
 	let new_x : name = get_name (Termops.ids_of_context env) x in
-	let new_env = Environ.push_rel (x,None,t) env in
+	let new_env = Environ.push_rel (var_decl_of_name x t) env in
 	let new_b,binders_to_remove_from_b = compute_new_princ_type remove new_env b in
 	 if List.exists (eq_constr (mkRel 1)) binders_to_remove_from_b
 	 then (Termops.pop new_b), filter_map (eq_constr (mkRel 1)) Termops.pop binders_to_remove_from_b
@@ -227,7 +227,7 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
 	let new_t,binders_to_remove_from_t = compute_new_princ_type remove env t in
 	let new_v,binders_to_remove_from_v = compute_new_princ_type remove env v in
 	let new_x : name = get_name (Termops.ids_of_context env) x in
-	let new_env = Environ.push_rel (x,Some v,t) env in
+	let new_env = Environ.push_rel (def_decl_of_name x v t) env in
 	let new_b,binders_to_remove_from_b = compute_new_princ_type remove new_env b in
 	if List.exists (eq_constr (mkRel 1)) binders_to_remove_from_b
 	then (Termops.pop new_b),filter_map (eq_constr (mkRel 1)) Termops.pop binders_to_remove_from_b
@@ -276,7 +276,7 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
 let change_property_sort toSort princ princName =
   let princ_info = compute_elim_sig princ in
   let change_sort_in_predicate (x,v,t) =
-    (x,None,
+    (x,v,
      let args,_ = decompose_prod t in
      compose_prod args (mkSort toSort)
     )
@@ -433,7 +433,7 @@ let get_funs_constant mp dp =
     match kind_of_term ((strip_lam e)) with
       | Fix((_,(na,_,_))) ->
 	  Array.mapi
-	    (fun i na ->
+	    (fun i (na,rel) ->
 	       match na with
 		 | Name id ->
 		     let const = make_con mp dp (label_of_id id) in

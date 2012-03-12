@@ -29,6 +29,33 @@ open Esubst
 
 open Constr
 
+let inductive_relevance env i = 
+  let ibody = Environ.lookup_ind i env in
+  match ibody.mind_arity with
+  | Polymorphic _ -> Expl
+  | Monomorphic ar -> relevance_of_sort ar.mind_sort
+
+let rec is_irrelevant env c = 
+  match kind_of_term c with
+  | Rel i -> annot_of_body (rel_body i env) = Irr
+  | Var id -> annot_of_body (named_body id env) = Irr
+  | Meta m -> false
+  | Evar e -> false
+  | Sort _ -> false
+  | Cast (c, _, _) -> is_irrelevant env c
+  | Prod (n, t, b) -> false
+  | Lambda (n, t, b) -> is_irrelevant (push_rel (var_decl_of n t) env) b
+  | LetIn (n, c, t, b) -> is_irrelevant (push_rel (def_decl_of n c t) env) b
+  | App (f, _, _) -> is_irrelevant env f
+  | Const c -> constant_relevance env c = Irr
+  | Ind _ -> false
+  | Construct (ind, i) -> inductive_relevance env ind = Irr
+  | Fix ((_, i), (na, _, _)) -> snd (na.(i)) = Irr
+  | CoFix (i, (na, _, _)) -> snd (na.(i)) = Irr
+  | Case (ci, p, t, brs) -> 
+    if Array.length brs = 0 then true (* FIXME: annotate cases *)
+    else is_irrelevant env brs.(0)
+
 let stats = ref false
 let share = ref true
 
@@ -213,6 +240,7 @@ type 'a infos = {
   i_tab : (table_key, 'a) Hashtbl.t }
 
 let info_flags info = info.i_flags
+let info_env info = info.i_env
 
 let ref_value_cache info ref =
   try
@@ -262,6 +290,12 @@ let create mk_cl flgs env evars =
     i_vars = defined_vars flgs env;
     i_tab = Hashtbl.create 17 }
 
+let relevance_of_table_key infos lfts tk =
+  let env = infos.i_env in
+    match tk with
+    | ConstKey cst -> constant_relevance env cst
+    | VarKey id -> annot_of_body (named_body id env)
+    | RelKey n -> annot_of_body (rel_body n (* (reloc_rel n lfts) *) env)
 
 (**********************************************************************)
 (* Lazy reduction: the one used in kernel operations                  *)
@@ -1010,3 +1044,31 @@ let create_clos_infos ?(evars=fun _ -> None) flgs env =
   create (fun _ -> inject) flgs env evars
 
 let unfold_reference = ref_value_cache
+
+
+(* pre: f is the head of a whnf *)
+let is_irrelevant_fconstr infos lft f =
+  let rec aux env lft f =
+  match f.term with
+  | FLambda _ -> 
+    let (na,ty,bd) = destFLambda mk_clos2 f in
+    let env' = annot_of na :: env in
+      aux env' (el_lift lft) bd
+  | FRel i | FFlex (RelKey i) -> 
+    let len = List.length env in
+      if i <= len then List.nth env (pred i) = Irr
+      else
+	let body = rel_body (reloc_rel (i - len) lft) (info_env infos) in
+	  annot_of_body body = Irr
+  | FFlex tk -> relevance_of_table_key infos lft tk = Irr
+  | FConstruct (ind, _) -> inductive_relevance (info_env infos) ind = Irr
+  | FFix (((ri, n), (na,_,_)),_) -> letannot_of (na.(n)) = Irr
+  | FCoFix ((n, (na,_,_)),_) -> letannot_of (na.(n)) = Irr
+
+  | FEvar _ -> false
+
+  | (FAtom _ | FInd _ | FProd _) -> false
+
+  (* f is the head of a whnf *)
+  | (FApp _ | FLetIn _ | FCases _ | FCLOS _ | FLIFT _ | FCast _ | FLOCKED) -> assert false
+  in aux [] lft f

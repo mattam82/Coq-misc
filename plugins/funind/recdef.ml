@@ -1393,7 +1393,7 @@ let nf_betaiotazeta = (* Reductionops.local_strong Reductionops.whd_betaiotazeta
 let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num eq
     generate_induction_principle using_lemmas : unit =
   let function_type = interp_constr Evd.empty (Global.env()) type_of_f in
-  let env = push_named (var_decl_of function_name function_type) (Global.env()) in
+  let env = push_named (var_decl_of_name function_name function_type) (Global.env()) in
   (* Pp.msgnl (str "function type := " ++ Printer.pr_lconstr function_type);  *)
   let equation_lemma_type = 
     nf_betaiotazeta
@@ -1401,7 +1401,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   in
  (* Pp.msgnl (str "lemma type := " ++ Printer.pr_lconstr equation_lemma_type ++ fnl ()); *)
   let res_vars,eq' = decompose_prod equation_lemma_type in
-  let env_eq' = Environ.push_rel_context (List.map (fun (x,y) -> (x,None,y)) res_vars) env in
+  let env_eq' = Environ.push_rel_context (List.map (fun (x,y) -> (x,variable_body,y)) res_vars) env in
   let eq' = nf_zeta env_eq' eq'  in
   let res =
 (*     Pp.msgnl (str "res_var :=" ++ Printer.pr_lconstr_env (push_rel_context (List.map (function (x,t) -> (x,None,t)) res_vars) env) eq'); *)
@@ -1419,7 +1419,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   let functional_id =  add_suffix function_name "_F" in
   let term_id = add_suffix function_name "_terminate" in
   let functional_ref = declare_fun functional_id (IsDefinition Decl_kinds.Definition) res in
-  let env_with_pre_rec_args = push_rel_context(List.map (function (x,t) -> (x,None,t)) pre_rec_args) env in  
+  let env_with_pre_rec_args = push_rel_context(List.map (function (x,t) -> (x,variable_body,t)) pre_rec_args) env in  
   let relation =
     interp_constr
       Evd.empty

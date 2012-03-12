@@ -63,9 +63,9 @@ let subst_evar_constr evs n idf t =
 	let args =
 	  let rec aux hyps args acc =
 	     match hyps, args with
-		 ((_, None, _) :: tlh), (c :: tla) ->
+		 ((_, Variable _, _) :: tlh), (c :: tla) ->
 		   aux tlh tla ((substrec (depth, fixrels) c) :: acc)
-	       | ((_, Some _, _) :: tlh), (_ :: tla) ->
+	       | ((_, Definition _, _) :: tlh), (_ :: tla) ->
 		   aux tlh tla acc
 	       | [], [] -> acc
 	       | _, _ -> acc (*failwith "subst_evars: invalid argument"*)
@@ -105,14 +105,14 @@ let etype_of_evar evs hyps concl =
 	let s' = Intset.union s s' in
 	let trans' = Idset.union trans trans' in
 	  (match copt with
-	      Some c -> 
+	      Definition (ann, c) -> 
 		let c', s'', trans'' = subst_evar_constr evs n mkVar c in
 		let c' = subst_vars acc 0 c' in
-		  mkNamedProd_or_LetIn (id, Some c', t'') rest,
+		  mkNamedProd_or_LetIn (id, Definition (ann, c'), t'') rest,
 		Intset.union s'' s',
 		Idset.union trans'' trans'
-	    | None ->
-		mkNamedProd_or_LetIn (id, None, t'') rest, s', trans')
+	    | Variable _ ->
+		mkNamedProd_or_LetIn (id, copt, t'') rest, s', trans')
     | [] ->
 	let t', s, trans = subst_evar_constr evs n mkVar concl in
 	  subst_vars acc 0 t', s, trans

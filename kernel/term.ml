@@ -274,6 +274,7 @@ module Constr = struct
   let concat_argsl (ans1, args1) (ans2, args2) =
     (ans1 @ ans2, args1 @ args2)
 
+
 end
 
 (* constr is the fixpoint of the previous type. Requires option
@@ -830,6 +831,8 @@ type 'a declaration = 'a * body * types
 type named_declaration = identifier declaration
 type rel_declaration = name declaration
 
+let set_binder (_, annot) na = (na, annot)
+
 let var_decl_of (na, annot) ty = (na, Variable annot, ty)
 let def_decl_of (na, annot) c ty = (na, Definition (annot, c), ty)
 let fix_decl_of (na, annot) ty = (na, Variable (annot, false), ty)
@@ -856,6 +859,11 @@ let fold_right_body f v a =
 let fold_body f a v =
   match v with
   | Definition (ann, c) -> f a c
+  | Variable _ -> a
+
+let fold_right_body f v a =
+  match v with
+  | Definition (ann, c) -> f c a
   | Variable _ -> a
       
 let cata_body f def v =
@@ -919,6 +927,8 @@ let body_of_rel n sign =
   match lookup_rel n sign with
   | (_,Definition (ann, c),_) -> Some c
   | _ -> None
+
+let rel_body n sign = pi2 (lookup_rel n sign)
 
 let rel_context_length = List.length
 

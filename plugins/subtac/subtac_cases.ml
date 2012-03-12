@@ -26,6 +26,7 @@ open Pretype_errors
 open Evarutil
 open Evarconv
 open Subtac_utils
+open Constr
 
 (************************************************************************)
 (*            Pattern-matching compilation (Cases)                      *)
@@ -257,23 +258,23 @@ let rec find_row_ind = function
   | PatVar _ :: l -> find_row_ind l
   | PatCstr(loc,c,_,_) :: _ -> Some (loc,c)
 
-let inductive_template isevars env tmloc ind =
+let inductive_template evdref env tmloc ind =
   let arsign = get_full_arity_sign env ind in
   let hole_source = match tmloc with
-    | Some loc -> fun i -> (loc, Evd.TomatchTypeParameter (ind,i))
-    | None -> fun _ -> (dummy_loc, Evd.InternalHole) in
-   let (_,evarl,_) =
+    | Some loc -> fun i -> (loc, TomatchTypeParameter (ind,i))
+    | None -> fun _ -> (dummy_loc, InternalHole) in
+   let (_,annl,evarl,_) =
     List.fold_right
-      (fun (na,b,ty) (subst,evarl,n) ->
+      (fun (na,b,ty) (subst,annl,evarl,n) ->
 	match b with
-        | None ->
+        | Variable (ann, _) ->
 	    let ty' = substl subst ty in
-	    let e = e_new_evar isevars env ~src:(hole_source n) ty' in
-	    (e::subst,e::evarl,n+1)
-	| Some b ->
-	    (b::subst,evarl,n+1))
-      arsign ([],[],1) in
-   applist (mkInd ind,List.rev evarl)
+	    let e = e_new_evar evdref env ~src:(hole_source n) ty' in
+	    (e::subst,ann::annl,e::evarl,n+1)
+	| Definition (_, b) ->
+	    (substl subst b::subst,annl,evarl,n+1))
+      arsign ([],[],[],1) in
+   app_argsl (mkInd ind,(List.rev annl,List.rev evarl))
 
 
 (************************************************************************)
@@ -311,7 +312,7 @@ let prepare_predicate_from_arsign_tycon loc env evm tomatchs arsign c =
 	      | NotInd _ -> (* len - signlen, subst*) assert false (* signlen > 1 *)
 	      | IsInd (_, IndType(indf,realargs)) ->
 		  let subst =
-		    if dependent tm c && List.for_all isRel realargs
+		    if dependent tm c && List.for_all isRel (snd realargs)
 		    then (n, 1) :: subst else subst
 		  in
 		    List.fold_left
@@ -320,7 +321,7 @@ let prepare_predicate_from_arsign_tycon loc env evm tomatchs arsign c =
 			| Rel n when dependent arg c ->
 			    ((n, len) :: subst, pred len)
 			| _ -> (subst, pred len))
-		      (subst, len) realargs)
+		      (subst, len) (snd realargs))
 	  | _ -> (subst, len - signlen))
       ([], nar) tomatchs arsign
   in
@@ -468,9 +469,9 @@ let prepend_pattern tms eqn = {eqn with patterns = tms@eqn.patterns }
 exception NotAdjustable
 
 let rec adjust_local_defs loc = function
-  | (pat :: pats, (_,None,_) :: decls) ->
+  | (pat :: pats, (_,Variable _,_) :: decls) ->
       pat :: adjust_local_defs loc (pats,decls)
-  | (pats, (_,Some _,_) :: decls) ->
+  | (pats, (_,Definition _,_) :: decls) ->
       PatVar (loc, Anonymous) :: adjust_local_defs loc (pats,decls)
   | [], [] -> []
   | _ -> raise NotAdjustable
@@ -541,8 +542,8 @@ let dependencies_in_rhs nargs eqns =
   List.map (List.exists ((=) true)) columns
 
 let dependent_decl a = function
-  | (na,None,t) -> dependent a t
-  | (na,Some c,t) -> dependent a t || dependent a c
+  | (na,Variable _,t) -> dependent a t
+  | (na,Definition (_,c),t) -> dependent a t || dependent a c
 
 (* Computing the matrix of dependencies *)
 
@@ -716,7 +717,7 @@ let build_aliases_context env sigma names allpats pats =
 	let newallpats =
 	  List.map2 (fun l1 l2 -> List.hd l2::l1) newallpats oldallpats in
 	let oldallpats = List.map List.tl oldallpats in
-	let decl = (na,Some deppat,t) in
+	let decl = (def_decl_of_name na deppat t) in
 	let a = (deppat,nondeppat,d,t) in
 	insert (push_rel decl env) (decl::sign1) ((na,a)::sign2) (n+1)
 	  newallpats oldallpats (pats,names)
@@ -766,11 +767,11 @@ let prepare_unif_pb typ cs =
     if noccur_between_without_evar 1 n typ then lift (-n) typ
     else (* TODO4-1 *)
       error "Unable to infer return clause of this pattern-matching problem" in
-  let args = extended_rel_list (-n) cs.cs_args in
-  let ci = applist (mkConstruct cs.cs_cstr, cs.cs_params@args) in
+  let args = extended_rel_applist (-n) cs.cs_args in
+  let ci = Constr.app_argsl (mkConstruct cs.cs_cstr, Constr.concat_argsl cs.cs_params args) in
 
   (* This is the problem: finding P s.t. cs_args |- (P realargs ci) = typ' *)
-  (Array.map (lift (-n)) cs.cs_concl_realargs, ci, typ')
+  (Constr.map_args (lift (-n)) cs.cs_concl_realargs, ci, typ')
 
 
 (* Infering the predicate *)
@@ -876,7 +877,7 @@ let infer_predicate loc env isevars typs cstrs indf =
     if array_for_all (fun (_,_,typ) -> e_cumul env isevars typ mtyp) eqns
     then
       (* Non dependent case -> turn it into a (dummy) dependent one *)
-      let sign = (Anonymous,None,build_dependent_inductive env indf)::sign in
+      let sign = (var_decl_of_name Anonymous (build_dependent_inductive env indf))::sign in
       let pred = it_mkLambda_or_LetIn (lift (List.length sign) mtyp) sign in
       (true,pred) (* true = dependent -- par défaut *)
     else
@@ -941,7 +942,7 @@ let specialize_predicate_var (cur,typ) = function
   | PrLetIn ((_,dep),pred) ->
       (match typ with
         | IsInd (_,IndType (_,realargs)) ->
-           subst_predicate (realargs,if dep<>Anonymous then Some cur else None) pred
+           subst_predicate (snd realargs,if dep<>Anonymous then Some cur else None) pred
         | _ -> anomaly "specialize_predicate_var")
 
 let ungeneralize_predicate = function
@@ -979,7 +980,7 @@ let rec extract_predicate l = function
   | PrLetIn (([],dep),pred), Pushed ((cur,_),_)::tms ->
       extract_predicate (if dep<>Anonymous then cur::l else l) (pred,tms)
   | PrLetIn ((_,dep),pred), Pushed ((cur,IsInd (_,(IndType(_,realargs)))),_)::tms ->
-      let l = List.rev realargs@l in
+      let l = List.rev (snd realargs)@l in
       extract_predicate (if dep<>Anonymous then cur::l else l) (pred,tms)
   | PrCcl ccl, [] ->
       substl l ccl
@@ -1061,7 +1062,7 @@ let specialize_predicate tomatchs deps cs = function
       (* We adjust pred st: gamma, x1..xn, (X,x:=realargs,copt) |- pred' *)
       let n = cs.cs_nargs in
       let pred' = liftn_predicate n (k+1) pred in
-      let argsi = if nrealargs <> 0 then Array.to_list cs.cs_concl_realargs else [] in
+      let argsi = if nrealargs <> 0 then Array.to_list (snd cs.cs_concl_realargs) else [] in
       let copti = if isdep<>Anonymous then Some (build_dependent_constructor cs) else None in
       (* The substituends argsi, copti are all defined in gamma, x1...xn *)
       (* We need _parallel_ bindings to get gamma, x1...xn |- pred'' *)
@@ -1077,7 +1078,7 @@ let find_predicate loc env isevars p typs cstrs current
     match p with
       | Some p -> abstract_predicate env ( !isevars) indf current tms p
       | None -> infer_predicate loc env isevars typs cstrs indf in
-  let typ = whd_beta ( !isevars) (applist (pred, realargs)) in
+  let typ = whd_beta ( !isevars) (Constr.app_argsl (pred, realargs)) in
   if dep then
     (pred, whd_beta ( !isevars) (applist (typ, [current])),
      new_Type ())
@@ -1168,7 +1169,7 @@ let shift_problem (current,t) pb =
 let build_branch current deps pb eqns const_info =
   (* We remember that we descend through a constructor *)
   let alias_type =
-    if Array.length const_info.cs_concl_realargs = 0
+    if Array.length (snd const_info.cs_concl_realargs) = 0
       & not (known_dependent pb.pred) & deps = []
     then
       NonDepAlias
@@ -1193,7 +1194,7 @@ let build_branch current deps pb eqns const_info =
       (fun (na,c,t as d) (env,typs,tms) ->
 	 let tm1 = List.map List.hd tms in
 	 let tms = List.map List.tl tms in
- 	 (push_rel d env, (na,to_mutind env pb.isevars tm1 c t)::typs,tms))
+ 	 (push_rel d env, (na,to_mutind env pb.isevars tm1 (constr_of_body c) t)::typs,tms))
       typs (pb.env,[],List.map fst eqns) in
 
   let dep_sign =
@@ -1217,9 +1218,9 @@ let build_branch current deps pb eqns const_info =
 
   let sign = List.map (fun (na,t) -> mkDeclTomatch na t) typs' in
   let ind =
-    appvect (
-      applist (mkInd (inductive_of_constructor const_info.cs_cstr),
-      List.map (lift const_info.cs_nargs) const_info.cs_params),
+    app_args (
+      app_argsl (mkInd (inductive_of_constructor const_info.cs_cstr),
+      map_argsl (lift const_info.cs_nargs) (snd const_info.cs_params)),
       const_info.cs_concl_realargs) in
 
   let cur_alias = lift (List.length sign) current in

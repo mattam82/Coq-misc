@@ -315,10 +315,10 @@ let rec it_mkGLambda env body =
 (**********************************************************************)
 (* Utilities for binders                                              *)
 let build_impls = function
-  |Implicit -> (function
+  |(Lib.Implicit,_) -> (function
 		  |Name id ->  Some (id, Impargs.Manual, (true,true))
 		  |Anonymous -> anomaly "Anonymous implicit argument")
-  |Explicit -> fun _ -> None
+  |(Lib.Explicit,_) -> fun _ -> None
 
 let impls_type_list ?(args = []) =
   let rec aux acc = function
@@ -423,7 +423,7 @@ let intern_local_binder_aux ?(global_level=false) intern intern_type lvar (env,b
   | LocalRawDef((loc,na as locna),def) ->
       let indef = intern env def in
       (push_name_env lvar (impls_term_list indef) env locna,
-      (na,Explicit,Some(indef),GHole(loc,Evd.BinderType na))::bl)
+      (na,explicit_bk,Some(indef),GHole(loc,Evd.BinderType na))::bl)
 
 let intern_generalization intern env lvar loc bk ak c =
   let c = intern {env with unb = true} c in
@@ -467,7 +467,7 @@ let iterate_binder intern lvar (env,bl) = function
   | LocalRawDef((loc,na as locna),def) ->
       let indef = intern env def in
       (push_name_env lvar (impls_term_list indef) env locna,
-      (na,Explicit,Some(indef),GHole(loc,Evd.BinderType na))::bl)
+      (na,explicit_bk,Some(indef),GHole(loc,Evd.BinderType na))::bl)
 
 (**********************************************************************)
 (* Syntax extensions                                                  *)
@@ -1288,7 +1288,7 @@ let internalize sigma globalenv env allow_patvar lvar c =
               Array.map (fun (_,ty,_) -> ty) idl,
               Array.map (fun (_,_,bd) -> bd) idl)
     | CArrow (loc,c1,c2) ->
-        GProd (loc, Anonymous, Explicit, intern_type env c1, intern_type env c2)
+        GProd (loc, Anonymous, explicit_bk, intern_type env c1, intern_type env c2)
     | CProdN (loc,[],c2) ->
         intern_type env c2
     | CProdN (loc,(nal,bk,ty)::bll,c2) ->
@@ -1708,9 +1708,9 @@ let interp_rawcontext_gen understand_type understand_judgment env bl =
 	    None ->
 	      let t' = locate_if_isevar (loc_of_glob_constr t) na t in
 	      let t, rel = understand_type env t' in
-	      let d = var_decl_of (na, (rel, k = Implicit)) t in
+	      let d = var_decl_of (na, (rel, k = implicit_bk)) t in
 	      let impls =
-		if k = Implicit then
+		if k = implicit_bk then
 		  let na = match na with Name n -> Some n | Anonymous -> None in
 		    (ExplByPos (n, na), (true, true, true)) :: impls
 		else impls

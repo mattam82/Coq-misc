@@ -120,7 +120,7 @@ let declare_instance_constant k pri global imps ?hook id term termtype =
     instance_hook k pri global imps ?hook (ConstRef kn);
     id
 
-let new_instance ?(abstract=false) ?(global=false) ctx (instid, bk, cl) props
+let new_instance ?(abstract=false) ?(global=false) ctx (instid, (bk,_), cl) props
     ?(generalize=true)
     ?(tac:Proof_type.tactic option) ?(hook:(global_reference -> unit) option) pri =
   let env = Global.env() in
@@ -138,7 +138,7 @@ let new_instance ?(abstract=false) ?(global=false) ctx (instid, bk, cl) props
 	  cl
     | Explicit -> cl, Idset.empty
   in
-  let tclass = if generalize then CGeneralization (dummy_loc, Implicit, Some AbsPi, tclass) else tclass in
+  let tclass = if generalize then CGeneralization (dummy_loc, implicit_bk, Some AbsPi, tclass) else tclass in
   let k, cty, ctx', ctx, len, imps, subst =
     let impls, ((env', ctx), imps) = interp_context_evars evars env ctx in
     let c', imps' = interp_type_evars_impls ~impls ~evdref:evars ~fail_evar:false env' tclass in

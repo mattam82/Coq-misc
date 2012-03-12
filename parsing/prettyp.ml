@@ -414,7 +414,7 @@ let print_typed_body (val_0,typ) =
 
 let ungeneralized_type_of_constant_type = function
   | PolymorphicArity (ctx,a) -> mkArity (ctx, Type a.poly_level)
-  | NonPolymorphicType t -> t
+  | NonPolymorphicType (t,_) -> t
 
 let print_constant with_values sep sp =
   let cb = Global.lookup_constant sp in

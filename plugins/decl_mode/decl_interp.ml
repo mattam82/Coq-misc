@@ -184,11 +184,11 @@ let interp_constr_or_thesis check_sort sigma env = function
 let abstract_one_hyp inject h glob =
   match h with
       Hvar (loc,(id,None)) ->
-	GProd (dummy_loc,Name id, Explicit, GHole (loc,Evd.BinderType (Name id)), glob)
+	GProd (dummy_loc,Name id, explicit_bk, GHole (loc,Evd.BinderType (Name id)), glob)
     | Hvar (loc,(id,Some typ)) ->
-	GProd (dummy_loc,Name id, Explicit, fst typ, glob)
+	GProd (dummy_loc,Name id, explicit_bk, fst typ, glob)
     | Hprop st ->
-	GProd (dummy_loc,st.st_label, Explicit, inject st.st_it, glob)
+	GProd (dummy_loc,st.st_label, explicit_bk, inject st.st_it, glob)
 
 let glob_constr_of_hyps inject hyps head =
   List.fold_right (abstract_one_hyp inject) hyps head
@@ -250,14 +250,14 @@ let rec glob_of_pat =
 let prod_one_hyp = function
     (loc,(id,None)) ->
       (fun glob ->
-	 GProd (dummy_loc,Name id, Explicit,
+	 GProd (dummy_loc,Name id, explicit_bk,
 		GHole (loc,Evd.BinderType (Name id)), glob))
   | (loc,(id,Some typ)) ->
       (fun glob ->
-	 GProd (dummy_loc,Name id, Explicit, fst typ, glob))
+	 GProd (dummy_loc,Name id, explicit_bk, fst typ, glob))
 
 let prod_one_id (loc,id) glob =
-  GProd (dummy_loc,Name id, Explicit,
+  GProd (dummy_loc,Name id, explicit_bk,
 	 GHole (loc,Evd.BinderType (Name id)), glob)
 
 let let_in_one_alias (id,pat) glob =
@@ -413,11 +413,11 @@ let interp_casee sigma env = function
 let abstract_one_arg = function
     (loc,(id,None)) ->
       (fun glob ->
-	 GLambda (dummy_loc,Name id, Explicit,
+	 GLambda (dummy_loc,Name id, explicit_bk,
 		GHole (loc,Evd.BinderType (Name id)), glob))
   | (loc,(id,Some typ)) ->
       (fun glob ->
-	 GLambda (dummy_loc,Name id, Explicit, fst typ, glob))
+	 GLambda (dummy_loc,Name id, explicit_bk, fst typ, glob))
 
 let glob_constr_of_fun args body =
   List.fold_right abstract_one_arg args (fst body)

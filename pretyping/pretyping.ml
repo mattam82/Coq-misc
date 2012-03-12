@@ -343,7 +343,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
     else 
       error_relevance_mismatch env (nf_evar !evdref ty) rel rel'
 
-  (* [pretype tycon env evdref lvar lmeta cstr] attempts to type [cstr] *)
+  (* [pretype tycon env evdref lvar cstr] attempts to type [cstr] *)
   (* in environment [env], with existential variables [evdref] and *)
   (* the type constraint tycon *)
   let rec pretype (tycon : type_constraint) env evdref lvar = function
@@ -392,7 +392,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
             [] -> ctxt
           | (na,bk,None,ty)::bl ->
               let ty', rel = pretype_type empty_valcon env evdref lvar ty in
-              let dcl = var_decl_of (na, (rel, bk = Implicit)) ty'.utj_val in
+              let dcl = var_decl_of (na, (rel, fst bk = Lib.Implicit)) ty'.utj_val in
 		type_bl (push_rel dcl env) (add_rel_decl dcl ctxt) bl
           | (na,bk,Some bd,ty)::bl ->
               let ty',rel = pretype_type empty_valcon env evdref lvar ty in
@@ -502,14 +502,14 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	let dom_valcon = valcon_of_tycon dom in
 	let j,relc1 = pretype_type dom_valcon env evdref lvar c1 in
 	let name = orelse_name name name' in
-	let binder = (name, (relc1, bk = Implicit)) in
+	let binder = (name, (relc1, fst bk = Lib.Implicit)) in
 	let var = var_decl_of binder j.utj_val in
 	let j',relc2 = pretype rng (push_rel var env) evdref lvar c2 in
 	  judge_of_abstraction env binder j j', relc2
 
     | GProd(loc,name,bk,c1,c2)        ->
 	let j, relc1 = pretype_type empty_valcon env evdref lvar c1 in
-	let binder = (name, (relc1, bk = Implicit)) in
+	let binder = (name, (relc1, fst bk = Lib.Implicit)) in
 	let j', relc2 =
 	  if name = Anonymous then
 	    let j, rel = pretype_type empty_valcon env evdref lvar c2 in

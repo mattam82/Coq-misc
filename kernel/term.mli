@@ -436,6 +436,7 @@ val smartmap_body : (constr -> constr) -> body -> body
 val iter_body : (constr -> unit) -> body -> unit
 val cata_body : (constr -> 'a) -> 'a -> body -> 'a
 val fold_body : ('a -> constr -> 'a) -> 'a -> body -> 'a
+val fold_right_body : (constr -> 'a -> 'a) -> body -> 'a -> 'a
 val compare_body : (constr -> constr -> bool) -> body -> body -> bool
 
 val anonymous : name binder_annot
@@ -455,6 +456,8 @@ val letbinder_annot_of : 'a -> 'a letbinder_annot
 
 val map_binder : ('a -> 'b) -> 'a binder_annot -> 'b binder_annot
 val map_letbinder : ('a -> 'b) -> 'a letbinder_annot -> 'b letbinder_annot
+
+val set_binder : 'a binder_annot -> 'b -> 'b binder_annot
 
 val var_decl_of : 'a binder_annot -> types -> 'a declaration
 val def_decl_of : 'a letbinder_annot -> constr -> types -> 'a declaration
@@ -500,8 +503,8 @@ val add_rel_decl : rel_declaration -> rel_context -> rel_context
 
 val lookup_rel : int -> rel_context -> rel_declaration
 val evaluable_rel : int -> rel_context -> bool
-
 val body_of_rel : int -> rel_context -> constr option
+val rel_body : int -> rel_context -> body
 
 val rel_context_length : rel_context -> int
 val rel_context_nhyps : rel_context -> int

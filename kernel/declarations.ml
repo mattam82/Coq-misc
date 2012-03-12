@@ -38,7 +38,7 @@ type polymorphic_arity = {
 }
 
 type constant_type =
-  | NonPolymorphicType of types
+  | NonPolymorphicType of types * relevance
   | PolymorphicArity of rel_context * polymorphic_arity
 
 type constr_substituted = constr substituted
@@ -118,7 +118,7 @@ let subst_rel_context sub = list_smartmap (subst_rel_declaration sub)
 let subst_const_type sub arity =
   if is_empty_subst sub then arity
   else match arity with
-    | NonPolymorphicType s -> NonPolymorphicType (subst_mps sub s)
+    | NonPolymorphicType (s, r) -> NonPolymorphicType (subst_mps sub s, r)
     | PolymorphicArity (ctx,s) -> PolymorphicArity (subst_rel_context sub ctx,s)
 
 let subst_const_def sub = function
@@ -149,8 +149,8 @@ let hcons_polyarity ar =
     poly_level = hcons_univ ar.poly_level }
 
 let hcons_const_type = function
-  | NonPolymorphicType t ->
-    NonPolymorphicType (hcons_constr t)
+  | NonPolymorphicType (t, r) ->
+    NonPolymorphicType (hcons_constr t, r)
   | PolymorphicArity (ctx,s) ->
     PolymorphicArity (hcons_rel_context ctx, hcons_polyarity s)
 

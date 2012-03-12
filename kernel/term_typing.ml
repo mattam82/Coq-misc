@@ -33,8 +33,9 @@ let constrain_type env j cst1 = function
       let (tj,cst2) = infer_type env t in
       let (_,cst3) = judge_of_cast env j DEFAULTcast tj in
 	assert (eq_constr t tj.utj_val);
+	let rel = relevance_of_sort tj.utj_type in
 	let cstrs = union_constraints (union_constraints cst1 cst2) cst3 in
-	  NonPolymorphicType t, cstrs
+	  NonPolymorphicType (t,rel), cstrs
 
 let local_constrain_type env j cst1 = function
   | None ->
@@ -109,10 +110,10 @@ let infer_declaration env dcl =
       let (j,cst) = infer env t in
       let t, irr = Typeops.assumption_of_judgment env j in
       let t = hcons_constr t in
-      Undef nl, NonPolymorphicType t, cst, ctx
+      Undef nl, NonPolymorphicType (t,irr), cst, ctx
 
 let global_vars_set_constant_type env = function
-  | NonPolymorphicType t -> global_vars_set env t
+  | NonPolymorphicType (t,_) -> global_vars_set env t
   | PolymorphicArity (ctx,_) ->
       Sign.fold_rel_context
         (fold_rel_declaration

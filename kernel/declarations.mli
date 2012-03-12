@@ -27,7 +27,7 @@ type polymorphic_arity = {
 }
 
 type constant_type =
-  | NonPolymorphicType of types
+  | NonPolymorphicType of types * relevance
   | PolymorphicArity of rel_context * polymorphic_arity
 
 type constr_substituted

@@ -213,7 +213,7 @@ let assumptions ?(add_opaque=false) st (* t *) =
       let ctype =
 	match cb.Declarations.const_type with
 	| PolymorphicArity (ctx,a) -> mkArity (ctx, Type a.poly_level)
-	| NonPolymorphicType t -> t
+	| NonPolymorphicType (t,r) -> t
       in
 	(s,ContextObjectMap.add cst ctype acc)
     in

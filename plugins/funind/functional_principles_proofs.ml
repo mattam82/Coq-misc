@@ -285,7 +285,7 @@ let change_eq env sigma hyp_id (context:rel_context) x t end_of_type  =
 	(fun i (end_of_type,ctxt_size,witness_fun) ((x',b',t') as decl) ->
 	   try
 	     let witness = Intmap.find i sub in
-	     if b' <> None then anomaly "can not redefine a rel!";
+	     if b' <> variable_body then anomaly "can not redefine a rel!";
 	     (Termops.pop end_of_type,ctxt_size,mkLetIn(x',witness,t',witness_fun))
 	   with Not_found  ->
 	     (mkProd_or_LetIn decl end_of_type, ctxt_size + 1, mkLambda_or_LetIn decl witness_fun)
@@ -518,7 +518,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 		(scan_type new_context new_t')
 	    with Failure "NoChange" ->
 	      (* Last thing todo : push the rel in the context and continue *)
-	      scan_type ((x,None,t_x)::context) t'
+	      scan_type ((var_decl_of_name x t_x)::context) t'
 	  end
       end
     else
@@ -1121,7 +1121,7 @@ let prove_princ_for_struct interactive_proof fun_num fnames all_funs _nparams : 
 		(fun i types ->
 		   let types = prod_applist types (List.rev_map var_of_decl princ_params) in
 		   { idx = idxs.(i)  - fix_offset;
-		     name = Nameops.out_name (fresh_id names.(i));
+		     name = Nameops.out_name (fresh_id (fst names.(i)));
 		     types = types;
 		     offset = fix_offset;
 		     nb_realargs =

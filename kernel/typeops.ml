@@ -141,35 +141,12 @@ let check_hyps id env hyps =
   if not (hyps_inclusion env hyps hyps') then
     error_reference_variables env id
 *)
-(* Instantiation of terms on real arguments. *)
-
-(* Make a type polymorphic if an arity *)
-
-let extract_level env p =
-  let _,c = dest_prod_assum env p in
-  match kind_of_term c with Sort (Type u) -> Some u | _ -> None
-
-let extract_context_levels env =
-  List.fold_left
-    (fun l (_,b,p) -> 
-     cata_body (fun _ -> l)
-       (extract_level env p::l) b) []
-
-let make_polymorphic_if_constant_for_ind env {uj_val = c; uj_type = t} =
-  let params, ccl = dest_prod_assum env t in
-  match kind_of_term ccl with
-  | Sort (Type u) when isInd (fst (Term.decompose_app (whd_betadeltaiota env c))) ->
-      let param_ccls = extract_context_levels env params in
-      let s = { poly_param_levels = param_ccls; poly_level = u} in
-      PolymorphicArity (params,s)
-  | _ ->
-      NonPolymorphicType t
 
 (* Type of constants *)
 
 let type_of_constant_knowing_parameters env t paramtyps =
   match t with
-  | NonPolymorphicType t -> t
+  | NonPolymorphicType (t,_) -> t
   | PolymorphicArity (sign,ar) ->
       let ctx = List.rev sign in
       let ctx,s = instantiate_universes env ctx ar paramtyps in
@@ -577,3 +554,28 @@ let typing env c =
 let relevance_of_type env ty = 
   let (j, _) = execute_type env ty (empty_constraint, universes env) in
     relevance_of_sort j.utj_type
+
+(* Instantiation of terms on real arguments. *)
+
+(* Make a type polymorphic if an arity *)
+
+let extract_level env p =
+  let _,c = dest_prod_assum env p in
+  match kind_of_term c with Sort (Type u) -> Some u | _ -> None
+
+let extract_context_levels env =
+  List.fold_left
+    (fun l (_,b,p) -> 
+     cata_body (fun _ -> l)
+       (extract_level env p::l) b) []
+
+let make_polymorphic_if_constant_for_ind env {uj_val = c; uj_type = t} =
+  let params, ccl = dest_prod_assum env t in
+  match kind_of_term ccl with
+  | Sort (Type u) when isInd (fst (Term.decompose_app (whd_betadeltaiota env c))) ->
+      let param_ccls = extract_context_levels env params in
+      let s = { poly_param_levels = param_ccls; poly_level = u} in
+      PolymorphicArity (params,s)
+  | Sort s ->
+      NonPolymorphicType (t, Expl)
+  | _ -> NonPolymorphicType (t, relevance_of_type (push_rel_context params env) ccl)

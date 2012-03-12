@@ -299,7 +299,7 @@ let implicit_application env ?(allow_partial=true) f ty =
 
 let implicits_of_glob_constr ?(with_products=true) l =
   let add_impl i na bk l =
- 	if bk = Implicit then
+ 	if fst bk = Lib.Implicit then
 	  let name =
 	    match na with
 	    | Name id -> Some id
@@ -315,7 +315,7 @@ let implicits_of_glob_constr ?(with_products=true) l =
       | GProd (loc, na, bk, t, b) ->
 	  if with_products then abs na bk b
 	  else 
-	    (if bk = Implicit then
+	    (if fst bk = Lib.Implicit then
 	       msg_warning (str "Ignoring implicit status of product binder " ++ 
 			      pr_name na ++ str " and following binders");
 	     [])

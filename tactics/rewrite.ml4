@@ -1473,7 +1473,7 @@ END
 let mkappc s l = CAppExpl (dummy_loc,(None,(Libnames.Ident (dummy_loc,id_of_string s))),l)
 
 let declare_an_instance n s args =
-  ((dummy_loc,Name n), Explicit,
+  ((dummy_loc,Name n), explicit_bk,
   CAppExpl (dummy_loc, (None, Qualid (dummy_loc, qualid_of_string s)),
 	   args))
 
@@ -1747,7 +1747,7 @@ let add_morphism glob binders m s n =
   init_setoid ();
   let instance_id = add_suffix n "_Proper" in
   let instance =
-    ((dummy_loc,Name instance_id), Explicit,
+    ((dummy_loc,Name instance_id), explicit_bk,
     CAppExpl (dummy_loc,
 	     (None, Qualid (dummy_loc, Libnames.qualid_of_string "Coq.Classes.Morphisms.Proper")),
 	     [cHole; s; m]))

@@ -307,7 +307,7 @@ let rec pat_of_raw metas vars = function
       PIf (pat_of_raw metas vars c,
            pat_of_raw metas vars b1,pat_of_raw metas vars b2)
   | GLetTuple (loc,nal,(_,None),b,c) ->
-      let mkGLambda c na = GLambda (loc,na,Explicit,GHole (loc,Evd.InternalHole),c) in
+      let mkGLambda c na = GLambda (loc,na,(Lib.Explicit,Expl),GHole (loc,Evd.InternalHole),c) in
       let c = List.fold_left mkGLambda c nal in
       let cip =
 	{ cip_style = LetStyle;

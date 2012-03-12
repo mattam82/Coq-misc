@@ -83,6 +83,7 @@ type table_key = id_key
 type 'a infos
 val ref_value_cache: 'a infos -> table_key -> 'a option
 val info_flags: 'a infos -> reds
+val info_env : 'a infos -> env
 val create: ('a infos -> constr -> 'a) -> reds -> env ->
   (existential -> constr option) -> 'a infos
 val evar_value : 'a infos -> existential -> constr option
@@ -180,6 +181,12 @@ val whd_stack :
 val unfold_reference : clos_infos -> table_key -> fconstr option
 
 val eq_table_key : table_key -> table_key -> bool
+
+val relevance_of_table_key : clos_infos -> lift -> table_key -> relevance
+val inductive_relevance : env -> inductive -> relevance
+
+val is_irrelevant : env -> constr -> bool
+val is_irrelevant_fconstr : clos_infos -> lift -> fconstr -> bool
 
 (***********************************************************************
   i This is for lazy debug *)

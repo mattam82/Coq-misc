@@ -61,6 +61,9 @@ let evaluable_rel n env =
 let rel_value n env = 
   body_of_rel n env.env_rel_context
 
+let rel_body n env = 
+  rel_body n env.env_rel_context
+
 let nb_rel env = env.env_nb_rel
 
 let push_rel = push_rel
@@ -161,6 +164,13 @@ let constant_type env kn =
   let cb = lookup_constant kn env in
     cb.const_type
 
+let constant_relevance env kn =
+  let cb = lookup_constant kn env in
+    match cb.const_type with
+    | PolymorphicArity _ -> Expl
+    | NonPolymorphicType (_, r) -> r
+
+
 type const_evaluation_result = NoBody | Opaque
 
 exception NotEvaluableConst of const_evaluation_result
@@ -183,6 +193,11 @@ let evaluable_constant cst env =
 
 (* Mutual Inductives *)
 let lookup_mind = lookup_mind
+
+let lookup_ind (mind, i) env = 
+  let mind = lookup_mind mind env in
+    mind.mind_packets.(i)
+
   
 let add_mind kn mib env =
   let new_inds = Mindmap_env.add kn mib env.env_globals.env_inductives in
