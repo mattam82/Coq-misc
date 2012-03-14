@@ -187,6 +187,7 @@ val inductive_relevance : env -> inductive -> relevance
 
 val is_irrelevant : env -> constr -> bool
 val is_irrelevant_fconstr : clos_infos -> lift -> fconstr -> bool
+val push_var : name binder_annot -> clos_infos -> clos_infos
 
 (***********************************************************************
   i This is for lazy debug *)

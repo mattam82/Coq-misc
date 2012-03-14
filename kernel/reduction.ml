@@ -343,17 +343,19 @@ and eqappr cv_pb l2r infos check_irrel (lft1,st1) (lft2,st2) cuniv =
            we throw them away *)
         if not (is_empty_stack v1 && is_empty_stack v2) then
 	  anomaly "conversion was given ill-typed terms (FLambda)";
-        let (_,ty1,bd1) = destFLambda mk_clos hd1 in
+        let (na,ty1,bd1) = destFLambda mk_clos hd1 in
         let (_,ty2,bd2) = destFLambda mk_clos hd2 in
         let u1 = ccnv CONV l2r infos el1 el2 ty1 ty2 cuniv in
-        ccnv CONV l2r infos (el_lift el1) (el_lift el2) bd1 bd2 u1
+	let infos' = fst infos, push_var na (snd infos) in
+        ccnv CONV l2r infos' (el_lift el1) (el_lift el2) bd1 bd2 u1
 
-    | (FProd (_,c1,c2), FProd (_,c'1,c'2)) ->
+    | (FProd (_,c1,c2), FProd (na,c'1,c'2)) ->
         if not (is_empty_stack v1 && is_empty_stack v2) then
 	  anomaly "conversion was given ill-typed terms (FProd)";
 	(* Luo's system *)
         let u1 = ccnv CONV l2r infos el1 el2 c1 c'1 cuniv in
-        ccnv cv_pb l2r infos (el_lift el1) (el_lift el2) c2 c'2 u1
+	let infos' = fst infos, push_var na (snd infos) in
+        ccnv cv_pb l2r infos' (el_lift el1) (el_lift el2) c2 c'2 u1
 
     (* Eta-expansion on the fly *)
     | (FLambda _, _) ->

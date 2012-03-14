@@ -1045,6 +1045,8 @@ let create_clos_infos ?(evars=fun _ -> None) flgs env =
 
 let unfold_reference = ref_value_cache
 
+let push_var na infos = 
+  { infos with i_env = push_rel (var_decl_of na mkProp) infos.i_env }
 
 (* pre: f is the head of a whnf *)
 let is_irrelevant_fconstr infos lft f =
